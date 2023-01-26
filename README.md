@@ -19,10 +19,8 @@ Installation
 > pip install imgtk
 ~~~
 
-Usage
+Usage : join
 ------------------------------------------------------------------------
-
-### join
 
 Convert set of images to PDF.
 
@@ -46,7 +44,7 @@ Options:
   -h, --help          Show this message and exit.
 ~~~
 
-#### Options
+### Options
 
 * -c, --config <cfg>
     * Configuration File (default: i2p.yml)
@@ -67,7 +65,7 @@ Options:
 * -h, --help
     * Show help message
 
-#### Configuration file
+### Configuration file
 
 YAML based configuration file (default file name: imgtk-join.yaml)
 is used to store default settings for the tool.
@@ -85,7 +83,7 @@ ext:
   - png
 ~~~
 
-#### TOC File (default name: toc.yml)
+### TOC File (default name: toc.yml)
 
 Consist of dictionary with following structure, where `level` is the 
 outline level (starting from 0), and `title` is the title of the 
@@ -117,7 +115,8 @@ Example may be as follows:
       title: 'Programming a Guessing Game'
 ~~~
 
-### sort
+Usage : sort
+------------------------------------------------------------------------
 
 Command to sort image files in one folder to another by date of image (exif meta-data or file creation date).
 
@@ -145,7 +144,7 @@ Options:
   -h, --help       Show this message and exit.
 ~~~
 
-#### Options
+### Options
 
 * --copy/--move
     * specify whether the file should be copied or moved.
@@ -165,7 +164,8 @@ Options:
 * -v, --verbose
     * verbose mode
 
-### dedup
+Usage : dedup
+------------------------------------------------------------------------
 
 This is a tool to find similar images in a set of images using imagehash
 library.  If two or more similar images are found (same hash value), the
@@ -194,7 +194,7 @@ Options:
   -h, --help                  Show this message and exit.
 ~~~
 
-#### Options
+### Options
 
 * PATH
     * PATH with the images to check for (will not be recursed)
