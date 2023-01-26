@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 
 """
-Image file manipulation toolkit
+Image Duplicate finder using Image Hash.
 
-.. currentmodule:: imgtk.imgtk
+.. currentmodule:: imgdup.imgdup
 .. moduleauthor:: koma <okunoya@path-works.net>
 """

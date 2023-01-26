@@ -33,67 +33,115 @@ from __future__ import absolute_import, division, print_function
 # Import the main click library
 import click
 # Import the sub-command implementations
-from .imgtk import imgtk
+from .join import join
+from .dedup import dedup
 # Import the version information
-from imgtk.version import __version__
+from imgtk import __version__
 
 CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 @click.group(context_settings=CONTEXT_SETTINGS)
 @click.version_option(version=__version__)
 def cli():
-    """cli tool: Image file manipulation toolkit"""
+    """Image File Manipulation Toolkit"""
     pass
 
 @cli.command()
-@click.argument('ARG')
+@click.argument('img', nargs=-1, type=click.Path(exists=True))
 @click.option(
-    '--flag', '-f', is_flag=True,
-    help='some flag option'
-    )
-@click.option(
-    '--config', '-c', default="./imgtk.yml",
+    '--config', '-c', default="./imgtk-join.yml",
     type=click.Path(exists=False, dir_okay=False, writable=True, resolve_path=True),
     metavar='<cfg>',
-    help='Configuration File (default: imgtk.yml)'
+    help='Configuration File (default: imgtk-join.yml)'
     )
 @click.option(
-    '--fmt', '-f', default="defaultvalue", type=str,
-    metavar='<fmt>',
-    help='string option'
+    '--out', '-o', type=str,
+    metavar='<out>',
+    help='output filename for the generated PDF'
     )
 @click.option(
-    '--verbose', '-v', is_flag=True,
-    help='output in verbose mode'
-    )
-def subcmd1(**kwargs):
-    """sample subcmd"""
-    imgtk.cmd(kwargs)
-    pass
-
-@cli.command()
-@click.argument('ARG')
-@click.option(
-    '--message', '-m', multiple=True,
-    help='some flag option'
+    '--toc', '-t', type=str,
+    metavar='<toc>',
+    help='toc file to populate PDF outline'
     )
 @click.option(
-    '--config', '-c', default="./imgtk.yml",
-    type=click.Path(exists=False, dir_okay=False, writable=True, resolve_path=True),
-    metavar='<cfg>',
-    help='Configuration File (default: imgtk.yml)'
+    '--ext', '-e', type=str,
+    multiple=True,
+    metavar='<ext>',
+    help='file extensions to pick up when parsing directories'
     )
 @click.option(
-    '--choice', '-c', type=click.Choice(['choice1', 'choice2']),
-    help='choice option'
+    '--dpi', '-d', type=int,
+    metavar='<dpi>',
+    help='pixel density of input image in dpi'
     )
 @click.option(
     '--verbose', '-v', count=True,
     help='output in verbose mode'
     )
-def subcmd2(**kwargs):
-    """sample subcmd"""
-    #imgtk.cmd2(kwargs)
-    print(kwargs)
+def join(**kwargs):
+    """Join images into one PDF file"""
+    join.join(kwargs)
+    pass
+
+@cli.command()
+@click.argument('PATH', type=click.Path(exists=True))
+@click.option(
+    '--hash-size', '-s', default=8, type=int,
+    metavar='<size>',
+    help='hash size to use for image hashing (default: dhash)'
+    )
+@click.option(
+    '--hash-func', '-f', 
+    metavar='<hashfunc>',
+    type=click.Choice(
+        [
+            'ahash',
+            'phash',
+            'dhash',
+            'haar',
+            'db4',
+            'color',
+            'crop'
+        ], 
+        case_sensitive=False
+    ),
+    default='dhash',
+    help='hash function to use for comparing images'
+    )
+@click.option(
+    '--verbose', '-v', count=True,
+    help='output in verbose mode'
+    )
+def dedup(**kwargs):
+    """Find duplicates in PATH using <hashfunc>
+
+    <hashfunc> can be any of the following:
+
+    \b
+        ahash	: Average hash
+        phash	: Perceptual hash
+        dhash	: Difference hash (default)
+        haar	: Haar wavelet hash
+        db4	: Daubechies wavelet hash 
+        color	: HSV color hash
+        crop	: crop-resistant hash
+    """
+    # convert cli option to find_dup method
+    func_switch = {
+        'ahash':'ahash',
+        'phash':'phash',
+        'dhash':'dhash',
+        'haar':'whash-haar',
+        'db4':'whash-db4',
+        'color':'colorhash',
+        'crop':'crop-resistant'
+    }
+    if kwargs['hash_func'] in func_switch:
+        hfunc=func_switch[kwargs['hash_func']]
+    else:
+        hfunc='dhash'
+
+    dedup.find_dup(kwargs, hashmethod=hfunc)
     pass
 
 # Entry point
