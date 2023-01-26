@@ -45,7 +45,7 @@ def cmd_updatepip():
     if os.name == 'nt':
         pfcmd = "echo Run 'pip install pip --upgrade' after activating venv using venv.bat"
     else:
-        pfcmd = "source .venv/bin/activate && pip install pip --upgrade"
+        pfcmd = "source .venv/bin/activate && python -m pip install pip --upgrade"
     return pfcmd
 
 

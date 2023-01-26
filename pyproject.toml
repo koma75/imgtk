@@ -30,8 +30,11 @@ classifiers = [
     'Topic :: Utilities',
 ]
 dependencies = [
-    'click>=8,<9',
+    'click>=8.1,<9',
     'PyYaml>=6,<7',
+    'pillow>=9.4,<10',
+    'imagehash>=4.3,<5',
+    'fpdf2>=2.6,<3',
 ]
 dynamic = ["version"]
 
