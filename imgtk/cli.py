@@ -35,6 +35,7 @@ import click
 # Import the sub-command implementations
 from .join import join
 from .dedup import dedup
+from .sort import sort
 # Import the version information
 from imgtk import __version__
 
@@ -143,6 +144,52 @@ def dedup(**kwargs):
 
     dedup.find_dup(kwargs, hashmethod=hfunc)
     pass
+
+# EXIF Sort
+defaultFmt = r'%Y-%m-%d'
+
+@cli.command()
+@click.argument('SRCDIR')
+@click.argument('TGTDIR')
+@click.option(
+    '--copy', 'sortfn', flag_value='copy', default=True,
+    help='Copy files from SRCDIR to TGTDIR (Default)'
+    )
+@click.option(
+    '--move', 'sortfn', flag_value='move',
+    help='Move files from SRCDIR to TGTDIR'
+    )
+@click.option(
+    '--recurse', '-r', is_flag=True,
+    help='Search for images in SRCDIR recursively'
+    )
+@click.option(
+    '--overwrite', '-o', is_flag=True,
+    help='Overwrite files in TGTDIR'
+    )
+@click.option(
+    '--hierarch', '-H', is_flag=True,
+    help='Create a hierarchical directory for Year, Month and Date in TGTDIR'
+    )
+@click.option(
+    '--dry-run', '-d', is_flag=True,
+    help='Dry run the command without moving'
+    )
+@click.option(
+    '--fmt', '-f', default=defaultFmt, type=str,
+    metavar='<fmt>',
+    help="Format target directory name using date format strftime string give in <fmt> (default: %Y-%m-%d)."
+    )
+@click.option(
+    '--verbose', '-v', count=True,
+    help='output in verbose mode'
+    )
+def sort(**kwargs):
+    """Sort and Move/Copy images from SRCDIR to TGTDIR."""
+    if kwargs['sortfn'] == 'move':
+        sort.mv(kwargs)
+    else:
+        sort.cp(kwargs)
 
 # Entry point
 def main():
