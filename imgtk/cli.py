@@ -33,9 +33,9 @@ from __future__ import absolute_import, division, print_function
 # Import the main click library
 import click
 # Import the sub-command implementations
-from .join import join
-from .dedup import dedup
-from .sort import sort
+from imgtk.exifsort import exifsort
+from imgtk.i2p import i2p
+from imgtk.deduplicate import deduplicate
 # Import the version information
 from imgtk import __version__
 
@@ -81,7 +81,7 @@ def cli():
     )
 def join(**kwargs):
     """Join images into one PDF file"""
-    join.join(kwargs)
+    i2p.join(kwargs)
     pass
 
 @cli.command()
@@ -142,7 +142,7 @@ def dedup(**kwargs):
     else:
         hfunc='dhash'
 
-    dedup.find_dup(kwargs, hashmethod=hfunc)
+    deduplicate.find_dup(kwargs, hashmethod=hfunc)
     pass
 
 # EXIF Sort
@@ -187,9 +187,9 @@ defaultFmt = r'%Y-%m-%d'
 def sort(**kwargs):
     """Sort and Move/Copy images from SRCDIR to TGTDIR."""
     if kwargs['sortfn'] == 'move':
-        sort.mv(kwargs)
+        exifsort.mv(kwargs)
     else:
-        sort.cp(kwargs)
+        exifsort.cp(kwargs)
 
 # Entry point
 def main():
