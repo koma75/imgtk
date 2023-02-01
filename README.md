@@ -15,7 +15,7 @@ supported commands are as follows:
 Installation
 ------------------------------------------------------------------------
 
-~~~shell
+~~~console
 > pip install imgtk
 ~~~
 
@@ -29,7 +29,7 @@ The tool will take multiple images in order, a directory of images or
 both and merge them into a PDF file in the order it is given. 
 Images in the directory will be searched by specified extensions and sorted by name.
 
-~~~shell
+~~~console
 Usage: imgtk join [OPTIONS] [IMG]...
 
   Join images into one PDF file
@@ -125,7 +125,7 @@ Target folders will be sorted based on the date the image was created
 (Referes to Exif meta-data or the file creation date if exif is not
 available).
 
-~~~shell
+~~~console
 Usage: imgtk sort [OPTIONS] SRCDIR TGTDIR
 
   Sort and Move/Copy images from SRCDIR to TGTDIR.
@@ -171,7 +171,7 @@ This is a tool to find similar images in a set of images using imagehash
 library.  If two or more similar images are found (same hash value), the
 images are moved to a subfolder for each hash value.
 
-~~~shell
+~~~console
 Usage: imgtk dedup [OPTIONS] PATH
 
   Find duplicates in PATH using <hashfunc>
@@ -236,7 +236,7 @@ May want to use venv when executing the pyinstaller.
 
 First, enter venv and install the local package and pyinstaller
 
-~~~shell
+~~~console
 >. .venv/Scripts/activate
 (.venv) >pip install .
 Processing /path/to/proj/imgtk
@@ -252,7 +252,7 @@ Successfully installed pyinstaller-3.6
 
 Use pyinstaller to build the exe file.
 
-~~~shell
+~~~console
 (.venv) >pyinstaller imgtk\cli.py --onefile --name imgtk
 ~snip~
 13691 INFO: Building EXE from EXE-00.toc completed successfully.
