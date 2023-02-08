@@ -38,8 +38,11 @@ dependencies = [
 ]
 dynamic = ["version"]
 
-# [project.optional-dependencies]
-# dev = ["pyinstaller"]
+[project.optional-dependencies]
+dev = [
+    "pyinstaller",
+    "build",
+]
 
 [project.scripts]
 imgtk = "imgtk.cli:main"
