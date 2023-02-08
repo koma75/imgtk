@@ -49,3 +49,6 @@ exclude = ["build", "test"]
 
 [tool.setuptools.dynamic]
 version = {attr = "imgtk.__version__"}
+
+[tool.setuptools_scm]
+write_to = "imgtk/_version.py"
