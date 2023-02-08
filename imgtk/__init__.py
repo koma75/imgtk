@@ -8,4 +8,4 @@ Image file manipulation toolkit
 .. moduleauthor:: koma <okunoya@path-works.net>
 """
 
-from ._version import version
+from ._version import __version__, __version_tuple__

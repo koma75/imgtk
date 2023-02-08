@@ -131,3 +131,4 @@ dmypy.json
 test/
 venv.bat
 imgtk/_version.py
+*.whl
