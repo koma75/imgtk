@@ -38,6 +38,12 @@ dependencies = [
 ]
 dynamic = ["version"]
 
+[project.urls]
+homepage = "https://github.com/koma75/imgtk"
+documentation = "https://github.com/koma75/imgtk/blob/main/README.md"
+repository = "https://github.com/koma75/imgtk.git"
+#changelog = "https://github.com/koma75/imgtk/blob/main/CHANGELOG.md"
+
 [project.optional-dependencies]
 dev = [
     "pyinstaller",
