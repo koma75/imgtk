@@ -275,4 +275,5 @@ Version History
 
 Date        | Version   | Changes
 :--         | --:       | :--
+2023.11.12  | 1.0.0     | Bump to 1.0.0.  Update Pillow to latest
 2023.01.26  | 0.1.0     | First Release
