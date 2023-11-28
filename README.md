@@ -19,6 +19,8 @@ Installation
 > pip install imgtk
 ~~~
 
+Note: Strongly recomend using pipx to isolate package dependencies.
+
 Usage : join
 ------------------------------------------------------------------------
 
@@ -224,7 +226,8 @@ same folder with tha hash value as the folder name.
 Known Issues
 ------------------------------------------------------------------------
 
-Need to be implemented.
+- No known issues at time of release.
+- See github issues for latest issues.
 
 Development
 ------------------------------------------------------------------------
@@ -275,5 +278,6 @@ Version History
 
 Date        | Version   | Changes
 :--         | --:       | :--
+2023.11.28  | 1.0.1     | fix issues with Readme.
 2023.11.12  | 1.0.0     | Bump to 1.0.0.  Update Pillow to latest
 2023.01.26  | 0.1.0     | First Release
