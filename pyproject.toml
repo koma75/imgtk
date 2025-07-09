@@ -32,7 +32,7 @@ classifiers = [
 dependencies = [
     'click>=8.1,<9',
     'PyYaml>=6,<7',
-    'pillow>=10.1,<11',
+    'pillow>=11.3,<12',
     'imagehash>=4.3,<5',
     'fpdf2>=2.6,<3',
 ]
