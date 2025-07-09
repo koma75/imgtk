@@ -34,6 +34,7 @@ import time
 from datetime import date
 from enum import IntEnum
 
+from PIL import ExifTags
 import click
 from PIL import Image
 from PIL.ExifTags import TAGS
@@ -188,23 +189,29 @@ def getDateOfImage(fpath, verbose=False):
     try:
         img = Image.open(fpath)
         exif = img.getexif()
-        try:
-            for id,val in exif.items():
-                tg = TAGS.get(id,id)
-                pout(f"{id}({tg}): {val}", verbose, Level.DEBUG)
-                if tg == "DateTimeOriginal" or tg == "DateTime":
-                    dtArr = re.split('[ :]', val)
-                    rt = date(int(dtArr[0]), int(dtArr[1]), int(dtArr[2]))
-            img.close()
-        except AttributeError:
-            pout("Exif not found: {filename}".format(filename=fpath),
-                verbose,
-                Level.DEBUG)
-    except:
-        pout("{filename} not a support image format".format(filename=fpath),
+        exif_ifd = exif.get_ifd(ExifTags.IFD.Exif)
+        if exif:
+            exif_dict = {TAGS.get(k,k): v for k, v in exif.items()}
+            exif_ifd_dict = {TAGS.get(k,k): v for k, v in exif_ifd.items()}
+            pout(f"exif_dict: {exif_dict}", verbose, Level.DEBUG)
+            pout(f"exif_ifd_dict: {exif_dict}", verbose, Level.DEBUG)
+            dtArr = None
+            if "DateTimeOriginal" in exif_ifd_dict:
+                dtArr = re.split('[ :]', exif_ifd_dict['DateTimeOriginal'])
+            elif "DateTimeDigitized" in exif_ifd_dict:
+                dtArr = re.split('[ :]', exif_ifd_dict['DateTimeDigitized'])
+            elif "DateTime" in exif_ifd_dict:
+                dtArr = re.split('[ :]', exif_ifd_dict['DateTime'])
+            elif "DateTime" in exif_dict:
+                dtArr = re.split('[ :]', exif_dict['DateTime'])
+            if dtArr is not None:
+                rt = date(int(dtArr[0]), int(dtArr[1]), int(dtArr[2]))
+        img.close()
+    except Exception as e:
+        pout(f"{fpath} not a supported image format: {e}",
             verbose,
             Level.DEBUG)
-    if rt == None:
+    if rt is None:
         rt = creation_date(fpath) # still needed to support .mov and other files
     return rt
 
