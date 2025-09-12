@@ -271,6 +271,7 @@ and the format of the configuration file "imgtk.yaml").
 
 | Date        | Version   | Changes                                         |
 | :--         | --:       | :--                                             |
+| 2025.09.12  | 1.2.0     | Parallelize dedup feature (x6 speedup on 8core) |
 | 2025.07.10  | 1.1.1     | fix Version History                             |
 | 2025.07.10  | 1.1.0     | Bump Pillow to 11.x                             |
 | 2023.11.28  | 1.0.1     | fix issues with Readme.                         |

@@ -1,20 +1,20 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 # BSD 2-Clause License
-# 
+#
 # Copyright (c) 2023 koma <okunoya@path-works.net>
 # All rights reserved.
-# 
+#
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-# 
+#
 # 1. Redistributions of source code must retain the above copyright notice, this
 #    list of conditions and the following disclaimer.
-# 
+#
 # 2. Redistributions in binary form must reproduce the above copyright notice,
 #    this list of conditions and the following disclaimer in the documentation
 #    and/or other materials provided with the distribution.
-# 
+#
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -27,6 +27,8 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 from enum import IntEnum
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from tqdm import tqdm
 
 
 import os
@@ -99,6 +101,13 @@ def pout(msg=None, Verbose=0, level=Level.INFO, newline=True):
 #	else:
 #		usage()
 
+def compute_hash(path, hashfunc):
+    try:
+        return f"{hashfunc(Image.open(path))}", path
+    except Exception as e:
+        pout(f"\nProblem: {e} with {path}", verbose, Level.ERROR)
+        return None
+
 
 def find_dup(kwargs, hashmethod='ahash'):
     """Image Duplicate finder using Image Hash.
@@ -112,12 +121,12 @@ def find_dup(kwargs, hashmethod='ahash'):
     pout(pformat(kwargs,depth=3,indent=4), verbose, Level.DEBUG)
 
     # 1. Now parse arguments
-    
+
     hashsize = kwargs["hash_size"]
     if hashsize < 1:
         pout(f"Hash size must be a positive integer [{hashsize}]", verbose, Level.ERROR)
         exit(1)
-        
+
     dir_path = kwargs["path"]
     if not os.path.isdir(dir_path):
         pout(f"Path {dir_path} does not exist.  Specify directory with images.", verbose, Level.ERROR)
@@ -157,23 +166,21 @@ def find_dup(kwargs, hashmethod='ahash'):
     image_paths = []
     image_paths += [os.path.join(dir_path, path) for path in os.listdir(dir_path) if is_image(path)]
     pout(image_paths, verbose, Level.DEBUG)
-    
+
     if len(image_paths) == 0:
         pout(f"No images found inside {dir_path}", verbose, Level.INFO)
         exit(0)
 
-    # Check the hash value for each file and insert into the himages dictionary
-    with click.progressbar(image_paths) as imgpaths:
-        for img in imgpaths:
-            try:
-                hash = f"{hashfunc(Image.open(img))}"
-            except Exception as e:
-                pout(f"\nProblem: {e} with {img}", verbose, Level.ERROR)
-                continue
-            if hash not in himages:
-                himages[hash] = [img]
-            else:
-                himages[hash] += [img]
+    with ProcessPoolExecutor() as executor:
+        futures = [executor.submit(compute_hash, img, hashfunc) for img in image_paths]
+        for future in tqdm(as_completed(futures), total=len(image_paths), desc="Processing images"):
+            result = future.result()
+            if result is not None:
+                hash_val, img = result
+                if hash_val not in himages:
+                    himages[hash_val] = [img]
+                else:
+                    himages[hash_val].append(img)
 
     # for each hash value, check if there are more than one image for a hash.
     # create a subdirectory for the hash value and move all images with the hash into the directory
