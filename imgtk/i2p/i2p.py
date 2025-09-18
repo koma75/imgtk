@@ -1,20 +1,20 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 # BSD 2-Clause License
-# 
+#
 # Copyright (c) 2023 koma <okunoya@path-works.net>
 # All rights reserved.
-# 
+#
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-# 
+#
 # 1. Redistributions of source code must retain the above copyright notice, this
 #    list of conditions and the following disclaimer.
-# 
+#
 # 2. Redistributions in binary form must reproduce the above copyright notice,
 #    this list of conditions and the following disclaimer in the documentation
 #    and/or other materials provided with the distribution.
-# 
+#
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -79,6 +79,7 @@ def pout(msg=None, Verbose=0, level=Level.INFO, newline=True):
         fg = 'red'
         error=True
     else:
+        fg = 'white'
         pass
     click.echo(click.style(str(msg), fg=fg), nl=newline, err=error)
 
@@ -101,8 +102,8 @@ def createConf(conf, verbose):
                 "  - jpeg\n",
                 "  - png\n",
             ])
-    except:
-        pout("could not create {file}".format(file=conf), verbose, Level.ERROR)
+    except Exception as e:
+        pout("could not create {file}: {err}".format(file=conf, err=e), verbose, Level.ERROR)
     pass
 
 def pixelmm(dpi):
@@ -144,7 +145,7 @@ def join(kwargs):
     conf['ext'].extend(kwargs['ext'])
     conf['ext'] = sorted(set(conf['ext']))
     conf['img'] = kwargs['img']
-    
+
     # overwrite some parameters if given in command line
     if kwargs['toc']:
         conf['toc'] = kwargs['toc']
@@ -190,9 +191,9 @@ def join(kwargs):
         # if toc cannot be read, just make empty TOC
         pout(e, verbose, Level.ERROR)
         pout('ToC Will not be populated due to toc file read error', verbose, Level.WARNING)
-        toc = {} 
+        toc = {}
 
-    # for each file in list, get width/height, calculate size in mm, 
+    # for each file in list, get width/height, calculate size in mm,
     # use w/h to create new pdf page and add the image to the pdf
     # if toc file is available, parse and append to the outline of the PDF file.
     pdf = FPDF()
@@ -216,7 +217,7 @@ def join(kwargs):
 
             pdf.add_page(orientation='P', format=(iw,ih))
             if pageNum in toc:
-                # If there is an entry in the toc for the page, 
+                # If there is an entry in the toc for the page,
                 for item in toc[pageNum]:
                     try:
                         pdf.start_section(item['title'], item['level'])

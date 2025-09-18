@@ -80,6 +80,7 @@ def pout(msg=None, Verbose=0, level=Level.INFO, newline=True):
         fg = 'red'
         error=True
     else:
+        fg = 'white'
         pass
     click.echo(click.style(str(msg), fg=fg), nl=newline, err=error)
 
@@ -103,8 +104,8 @@ def copyImage(src, dst, dryrun=False, overwrite=False, verbose=False):
                 # delete file and copy
                 try:
                     os.remove(dst)
-                except:
-                    pout("could not overwrite {file}".format(file=dst))
+                except Exception as e:
+                    pout("could not overwrite {file}: {err}".format(file=dst, err=e))
                     return
             else:
                 pout("{file} already exists.".format(file=dst), verbose, Level.WARNING)
@@ -112,8 +113,8 @@ def copyImage(src, dst, dryrun=False, overwrite=False, verbose=False):
         try:
             os.makedirs(os.path.dirname(os.path.abspath(dst)), exist_ok=True)
             shutil.copy2(os.path.abspath(src), os.path.abspath(dst))
-        except:
-            pout("could not copy to {file}".format(file=os.path.abspath(dst)), verbose, Level.WARNING)
+        except Exception as e:
+            pout("could not copy to {file}: {err}".format(file=os.path.abspath(dst), err=e), verbose, Level.WARNING)
     else:
         pout("DRY RUN... nothing is copied", verbose, Level.INFO)
 
@@ -136,8 +137,8 @@ def moveImage(src, dst, dryrun=False, overwrite=False, verbose=False):
                 # delete file and copy
                 try:
                     os.remove(dst)
-                except:
-                    pout("could not overwrite {file}".format(file=dst))
+                except Exception as e:
+                    pout("could not overwrite {file}: {err}".format(file=dst, err=e))
                     return
             else:
                 pout("{file} already exists.".format(file=dst), verbose, Level.WARNING)
@@ -145,8 +146,8 @@ def moveImage(src, dst, dryrun=False, overwrite=False, verbose=False):
         try:
             os.makedirs(os.path.dirname(os.path.abspath(dst)), exist_ok=True)
             shutil.move(os.path.abspath(src), os.path.abspath(dst))
-        except:
-            pout("could not move to {dst}".format(dst=os.path.abspath(dst)), verbose, Level.WARNING)
+        except Exception as e:
+            pout("could not move to {dst}: {err}".format(dst=os.path.abspath(dst), err=e), verbose, Level.WARNING)
     else:
         pout("DRY RUN... nothing is moved", verbose, Level.INFO)
 
@@ -252,6 +253,7 @@ def getTgtDir(basePath, fmt, filedate, filename, hierarch=False, verbose=False, 
         rt = os.path.join(basePath, filedate.strftime(r"%Y"), filedate.strftime(r"%m"), filedate.strftime(r"%d"))
     if makedir:
         os.makedirs(rt, exist_ok=True)
+    pout(f"path: {rt}", verbose, Level.DEBUG)
     return os.path.join(rt, filename)
 
 def sort(kwargs, func):

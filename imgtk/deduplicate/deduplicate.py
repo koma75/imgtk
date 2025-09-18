@@ -33,7 +33,6 @@ from tqdm import tqdm
 
 import os
 import shutil
-import re
 from pprint import pformat
 import click
 from PIL import Image
@@ -80,28 +79,11 @@ def pout(msg=None, Verbose=0, level=Level.INFO, newline=True):
         fg = 'red'
         error=True
     else:
+        fg = 'white'
         pass
     click.echo(click.style(str(msg), fg=fg), nl=newline, err=error)
 
-#	if hashmethod == 'ahash':
-#		hashfunc = imagehash.average_hash
-#	elif hashmethod == 'phash':
-#		hashfunc = imagehash.phash
-#	elif hashmethod == 'dhash':
-#		hashfunc = imagehash.dhash
-#	elif hashmethod == 'whash-haar':
-#		hashfunc = imagehash.whash
-#	elif hashmethod == 'whash-db4':
-#		def hashfunc(img):
-#			return imagehash.whash(img, mode='db4')
-#	elif hashmethod == 'colorhash':
-#		hashfunc = imagehash.colorhash
-#	elif hashmethod == 'crop-resistant':
-#		hashfunc = imagehash.crop_resistant_hash
-#	else:
-#		usage()
-
-def compute_hash(path, hashfunc):
+def compute_hash(path, hashfunc, verbose):
     try:
         return f"{hashfunc(Image.open(path))}", path
     except Exception as e:
@@ -134,23 +116,23 @@ def find_dup(kwargs, hashmethod='ahash'):
 
     # Set the hash method based on input
     if hashmethod == 'ahash':
-        hashfunc = imagehash.average_hash
+        hashfunc = imagehash.average_hash # type: ignore[assignment]
     elif hashmethod == 'phash':
-        hashfunc = imagehash.phash
+        hashfunc = imagehash.phash # type: ignore[assignment]
     elif hashmethod == 'dhash':
-        hashfunc = imagehash.dhash
+        hashfunc = imagehash.dhash # type: ignore[assignment]
     elif hashmethod == 'whash-haar':
-        hashfunc = imagehash.whash
+        hashfunc = imagehash.whash # type: ignore[assignment]
     elif hashmethod == 'whash-db4':
         def hashfunc(img):
             return imagehash.whash(img, mode='db4')
     elif hashmethod == 'colorhash':
-        hashfunc = imagehash.colorhash
+        hashfunc = imagehash.colorhash # type: ignore[assignment]
     elif hashmethod == 'crop-resistant':
-        hashfunc = imagehash.crop_resistant_hash
+        hashfunc = imagehash.crop_resistant_hash # type: ignore[assignment]
     else:
         pout("no hash method set, falling back to difference hash", verbose, Level.WARNING)
-        hashfunc = imagehash.dhash
+        hashfunc = imagehash.dhash # type: ignore[assignment]
 
     # 2. and do it's bidding
     # Initialize image sort dictionary (key=hash, value=array of image paths with that hash value)
@@ -172,7 +154,7 @@ def find_dup(kwargs, hashmethod='ahash'):
         exit(0)
 
     with ProcessPoolExecutor() as executor:
-        futures = [executor.submit(compute_hash, img, hashfunc) for img in image_paths]
+        futures = [executor.submit(compute_hash, img, hashfunc, verbose) for img in image_paths]
         for future in tqdm(as_completed(futures), total=len(image_paths), desc="Processing images"):
             result = future.result()
             if result is not None:
