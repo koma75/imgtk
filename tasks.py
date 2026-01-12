@@ -1,10 +1,12 @@
 import os, glob
+from pathlib import Path
 from invoke import task
 
 ##############################################
 ### Setup default variables
 ##############################################
 
+VENV_PY = Path(".venv/bin/python").resolve()
 
 ##############################################
 ### Helper Functions
@@ -44,7 +46,7 @@ def cmd_updatepip():
     if os.name == 'nt':
         pfcmd = "echo Run 'pip install pip --upgrade' after activating venv using venv.bat"
     else:
-        pfcmd = "source .venv/bin/activate && python -m pip install pip --upgrade"
+        pfcmd = f"{VENV_PY} -m pip install pip --upgrade && {VENV_PY} -m pip install --upgrade build twine"
     return pfcmd
 
 
@@ -61,38 +63,27 @@ def clean(c):
 @task()
 def venv(c):
     """initialize venv"""
-    c.run(f"python -m venv .venv")
+    c.run(f"{VENV_PY} -m venv .venv")
     c.run(cmd_updatepip())
 
-@task(pre=['clean'])
+@task(pre=[clean])
 def package(c):
     """Generate sdist"""
-    c.run(f"python setup.py sdist")
+    c.run(f"{VENV_PY} -m build")
 
-@task()
-def freeze(c):
-    """save requirements.txt"""
-    c.run(f"pip freeze > requirements.txt")
-    pass
-
-@task(pre=['package'])
+@task(pre=[package])
 def publish(c):
     """upload to PyPi"""
-    c.run(f"twine upload dist/*")
+    c.run(f"{VENV_PY} -m twine upload dist/*")
 
-@task(pre=['package'])
+@task(pre=[package])
 def pubtest(c):
     """upload to pypitest"""
-    c.run(f"twine upload --repository pypitest dist/*")
+    c.run(f"{VENV_PY} -m twine upload --repository pypitest dist/*")
     pass
 
-@task(pre=['freeze'])
-def install(c):
-    """install package from requirements.txt"""
-    c.run(f"pip install -r requirements.txt")
-
-@task(pre=['venv'], default=True)
+@task(pre=[venv], default=True)
 def build(c):
     """Build and install as editable"""
-    c.run(f"pip install --editable .")
+    c.run(f"{VENV_PY} -m pip install --editable .")
     pass
