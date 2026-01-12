@@ -230,7 +230,7 @@ def join(kwargs):
 
     # Write out result
     try:
-        pdf.output(conf['out'], 'F')
+        pdf.output(conf['out'])
     except Exception as e:
         pout(e,verbose, Level.ERROR)
     pass
