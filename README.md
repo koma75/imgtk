@@ -271,6 +271,7 @@ and the format of the configuration file "imgtk.yaml").
 
 | Date        | Version   | Changes                                         |
 | :--         | --:       | :--                                             |
+| 2026.01.13  | 1.2.1     | Fix call to FPDF failing                        |
 | 2025.09.12  | 1.2.0     | Parallelize dedup feature (x6 speedup on 8core) |
 | 2025.07.10  | 1.1.1     | fix Version History                             |
 | 2025.07.10  | 1.1.0     | Bump Pillow to 11.x                             |

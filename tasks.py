@@ -1,4 +1,3 @@
-from distutils import cmd
 import os, glob
 from invoke import task
 
