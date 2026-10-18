@@ -34,4 +34,6 @@ Sort image files in one folder to another by date of image (exif meta-data or fi
 .. moduleauthor:: koma <okunoya@path-works.net>
 """
 
-__all__ = ['sort']
+from .exifsort import sort, cp, mv, defaultFmt
+
+__all__ = ['sort', 'cp', 'mv']

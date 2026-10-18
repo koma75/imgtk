@@ -33,3 +33,7 @@ Convert set of images to PDF.
 .. currentmodule:: imgtk.i2p
 .. moduleauthor:: koma75 <omoikane@path-works.net>
 """
+
+from .i2p import join
+
+__all__ = ['join']

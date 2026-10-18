@@ -33,3 +33,7 @@ Image Duplicate finder using Image Hash.
 .. currentmodule:: imgtk.deduplicate
 .. moduleauthor:: koma <okunoya@path-works.net>
 """
+
+from .deduplicate import find_dup, HASH_FUNCS
+
+__all__ = ['find_dup', 'HASH_FUNCS']

@@ -28,18 +28,19 @@
 
 """Main CLI Setup and Entrypoint."""
 
-from __future__ import absolute_import, division, print_function
+import sys
 
 # Import the main click library
 import click
 # Import the sub-command implementations
-from imgtk.exifsort import exifsort
-from imgtk.i2p import i2p
-from imgtk.deduplicate import deduplicate
+from imgtk.exifsort import cp as exifsort_cp, mv as exifsort_mv, defaultFmt
+from imgtk.i2p import join as i2p_join
+from imgtk.deduplicate import find_dup, HASH_FUNCS
 # Import the version information
 from imgtk import __version__
 
 CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
+
 @click.group(context_settings=CONTEXT_SETTINGS)
 @click.version_option(version=__version__)
 def cli():
@@ -79,10 +80,11 @@ def cli():
     '--verbose', '-v', count=True,
     help='output in verbose mode'
     )
-def join(**kwargs):
+def join(img, config, out, toc, ext, dpi, verbose):
     """Join images into one PDF file"""
-    i2p.join(kwargs)
-    pass
+    rc = i2p_join(img, config=config, out=out, toc=toc, ext=ext, dpi=dpi, verbose=verbose)
+    if rc:
+        raise SystemExit(rc, "Failed to join images into PDF")
 
 @cli.command()
 @click.argument('PATH', type=click.Path(exists=True))
@@ -92,20 +94,9 @@ def join(**kwargs):
     help='hash size to use for image hashing (default: dhash)'
     )
 @click.option(
-    '--hash-func', '-f', 
+    '--hash-func', '-f',
     metavar='<hashfunc>',
-    type=click.Choice(
-        [
-            'ahash',
-            'phash',
-            'dhash',
-            'haar',
-            'db4',
-            'color',
-            'crop'
-        ], 
-        case_sensitive=False
-    ),
+    type=click.Choice(sorted(HASH_FUNCS), case_sensitive=False),
     default='dhash',
     help='hash function to use for comparing images'
     )
@@ -113,12 +104,12 @@ def join(**kwargs):
     '--verbose', '-v', count=True,
     help='output in verbose mode'
     )
-def dedup(**kwargs):
+def dedup(path, hash_size, hash_func, verbose):
     """Find duplicates in PATH using <hashfunc>
 
     <hashfunc> can be any of the following:
 
-    \b
+\b
         ahash	: Average hash
         phash	: Perceptual hash
         dhash	: Difference hash (default)
@@ -127,27 +118,11 @@ def dedup(**kwargs):
         color	: HSV color hash
         crop	: crop-resistant hash
     """
-    # convert cli option to find_dup method
-    func_switch = {
-        'ahash':'ahash',
-        'phash':'phash',
-        'dhash':'dhash',
-        'haar':'whash-haar',
-        'db4':'whash-db4',
-        'color':'colorhash',
-        'crop':'crop-resistant'
-    }
-    if kwargs['hash_func'] in func_switch:
-        hfunc=func_switch[kwargs['hash_func']]
-    else:
-        hfunc='dhash'
-
-    deduplicate.find_dup(kwargs, hashmethod=hfunc)
-    pass
+    rc = find_dup(path, hashfunc=HASH_FUNCS[hash_func], hash_size=hash_size, verbose=verbose)
+    if rc:
+        raise SystemExit(rc, "Failed to search for duplicate images")
 
 # EXIF Sort
-defaultFmt = r'%Y-%m-%d'
-
 @cli.command()
 @click.argument('SRCDIR')
 @click.argument('TGTDIR')
@@ -184,17 +159,30 @@ defaultFmt = r'%Y-%m-%d'
     '--verbose', '-v', count=True,
     help='output in verbose mode'
     )
-def sort(**kwargs):
+def sort(srcdir, tgtdir, sortfn, recurse, overwrite, hierarch, dry_run, fmt, verbose):
     """Sort and Move/Copy images from SRCDIR to TGTDIR."""
-    if kwargs['sortfn'] == 'move':
-        exifsort.mv(kwargs)
+    opts = dict(
+        recurse=recurse, overwrite=overwrite, hierarch=hierarch,
+        fmt=fmt, dry_run=dry_run, verbose=verbose,
+    )
+    if sortfn == 'move':
+        rc = exifsort_mv(srcdir, tgtdir, **opts)
     else:
-        exifsort.cp(kwargs)
+        rc = exifsort_cp(srcdir, tgtdir, **opts)
+    if rc:
+        raise SystemExit(rc, "Failed to sort images")
 
 # Entry point
 def main():
     """Main script."""
-    cli()
+    try:
+        cli()
+    except SystemExit as exc:
+        args = exc.args
+        rc = args[0] if args else 0
+        if len(args) > 1:
+            click.echo(str(args[1]), err=True)
+        sys.exit(rc)
 
 if __name__ == '__main__':
     main()

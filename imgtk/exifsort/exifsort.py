@@ -32,58 +32,14 @@ import re
 import shutil
 import time
 from datetime import date
-from enum import IntEnum
 
 from PIL import ExifTags
-import click
 from PIL import Image
 from PIL.ExifTags import TAGS
 
-class Level(IntEnum):
-    NOTSET = 0
-    DEBUG = 10
-    INFO = 20
-    WARNING = 30
-    ERROR = 40
-    CRITICAL = 50
+from .._logging import Level, pout
 
-def pout(msg=None, Verbose=0, level=Level.INFO, newline=True):
-    """stdout support method
-    All Error, Critical and Info are printed out.
-    while Warning and Debug are printed only with verbosity setting.
-    INFO -- Intended for standard output. output to STDOUT
-    DEBUG -- Intended for debug output. Shown only in verbosity>=2 output to STDOUT
-    WARNING -- Intended to show detailed warning. Shown only in verbosity>=1.  output to STDERR
-    ERROR -- Intended to show error.  output to STDERR
-    CRITICAL -- Intended to show critical error. output to STDERR
-
-    Keyword Arguments:
-        msg (string) -- message to print (default: {None})
-        Verbose (Int) -- Set True to print DEBUG message (default: {0})
-        level (Level) -- Set message level for coloring (default: {Level.INFO})
-        newline (bool) -- set to False if trailing new line is not needed (default: {True})
-    """
-    error=False
-    if level in {Level.NOTSET, Level.DEBUG}:
-        # blah
-        if Verbose < 2:
-            return
-        fg = 'magenta'
-    elif level == Level.INFO:
-        fg = 'green'
-    elif level == Level.WARNING:
-        if Verbose < 1:
-            return
-        fg = 'yellow'
-        error=True
-    elif level in {Level.ERROR, Level.CRITICAL}:
-        fg = 'red'
-        error=True
-    else:
-        fg = 'white'
-        pass
-    click.echo(click.style(str(msg), fg=fg), nl=newline, err=error)
-
+defaultFmt = r'%Y-%m-%d'
 
 def copyImage(src, dst, dryrun=False, overwrite=False, verbose=False):
     """Copy image from src to dst
@@ -105,7 +61,7 @@ def copyImage(src, dst, dryrun=False, overwrite=False, verbose=False):
                 try:
                     os.remove(dst)
                 except Exception as e:
-                    pout("could not overwrite {file}: {err}".format(file=dst, err=e))
+                    pout("could not overwrite {file}: {err}".format(file=dst, err=e), verbose, Level.ERROR)
                     return
             else:
                 pout("{file} already exists.".format(file=dst), verbose, Level.WARNING)
@@ -138,7 +94,7 @@ def moveImage(src, dst, dryrun=False, overwrite=False, verbose=False):
                 try:
                     os.remove(dst)
                 except Exception as e:
-                    pout("could not overwrite {file}: {err}".format(file=dst, err=e))
+                    pout("could not overwrite {file}: {err}".format(file=dst, err=e), verbose, Level.ERROR)
                     return
             else:
                 pout("{file} already exists.".format(file=dst), verbose, Level.WARNING)
@@ -195,7 +151,7 @@ def getDateOfImage(fpath, verbose=False):
             exif_dict = {TAGS.get(k,k): v for k, v in exif.items()}
             exif_ifd_dict = {TAGS.get(k,k): v for k, v in exif_ifd.items()}
             pout(f"exif_dict: {exif_dict}", verbose, Level.DEBUG)
-            pout(f"exif_ifd_dict: {exif_dict}", verbose, Level.DEBUG)
+            pout(f"exif_ifd_dict: {exif_ifd_dict}", verbose, Level.DEBUG)
             dtArr = None
             if "DateTimeOriginal" in exif_ifd_dict:
                 dtArr = re.split('[ :]', exif_ifd_dict['DateTimeOriginal'])
@@ -256,29 +212,38 @@ def getTgtDir(basePath, fmt, filedate, filename, hierarch=False, verbose=False, 
     pout(f"path: {rt}", verbose, Level.DEBUG)
     return os.path.join(rt, filename)
 
-def sort(kwargs, func):
+def sort(srcdir, tgtdir, *, func, recurse=False, overwrite=False, hierarch=False,
+         fmt=defaultFmt, dry_run=False, verbose=0):
     """Sort images to sorted directories using func
 
     Arguments:
-        kwargs {dict} -- command line argument parsed by click library
-        func {function} -- function to use to process images
+        srcdir {string} -- source directory to search
+        tgtdir {string} -- target directory to move/copy into
+        func {function} -- function to use to process images (copyImage/moveImage)
+    Keyword Arguments:
+        recurse {bool} -- search srcdir recursively
+        overwrite {bool} -- overwrite target files
+        hierarch {bool} -- create hierarchical year/month/day structure
+        fmt {string} -- strftime format for the subdirectory name
+        dry_run {bool} -- dry-run, do not move/copy
+        verbose {int} -- verbosity level
     """
     # 'srcdir': source directory to search (string)
-    sSrc = kwargs['srcdir']
+    sSrc = srcdir
     # 'tgtdir': target directory to move/copy to (string)
-    sTgt = kwargs['tgtdir']
+    sTgt = tgtdir
     # 'recurse': recursively search inside srcdir (bool)
-    bRec = kwargs['recurse']
+    bRec = recurse
     # 'overwrite': overwrite target (bool)
-    bOverwrite = kwargs['overwrite']
+    bOverwrite = overwrite
     # 'hierarch': create hierarchical subdirectory structure in tgtdir (bool)
-    bHier = kwargs['hierarch']
+    bHier = hierarch
     # 'fmt': date format to use as subdirectory name in tgtdir (string)
-    sFmt = kwargs['fmt']
+    sFmt = fmt
     # 'verbose': verbose mode flag (bool)
-    bVerb = kwargs['verbose']
+    bVerb = verbose
     # 'dry-run':
-    bDry = kwargs['dry_run']
+    bDry = dry_run
     # Step 1:
     # search for images in kwargs["srcdir"]
     # TODO: prune file list of non-image files based on file extensions
@@ -317,25 +282,34 @@ def sort(kwargs, func):
             bOverwrite,
             bVerb)
         # use func(src, dst, verbose) to move/copy image to appropriate path
-    return
+    return 0
 
-def cp(kwargs):
+def cp(srcdir, tgtdir, *, recurse=False, overwrite=False, hierarch=False,
+       fmt=defaultFmt, dry_run=False, verbose=0):
     """Copy images to sorted directories
 
     Arguments:
-        kwargs {dict} -- command line arguments parsed by click library
+        srcdir {string} -- source directory
+        tgtdir {string} -- target directory
     """
-    # Copy images to sorted directories.
-    pout(kwargs, kwargs["verbose"], Level.DEBUG)
-    sort(kwargs, copyImage)
-    pass
+    opts = dict(
+        recurse=recurse, overwrite=overwrite, hierarch=hierarch,
+        fmt=fmt, dry_run=dry_run, verbose=verbose,
+    )
+    pout({'srcdir': srcdir, 'tgtdir': tgtdir, **opts}, verbose, Level.DEBUG)
+    return sort(srcdir, tgtdir, func=copyImage, **opts)
 
-def mv(kwargs):
+def mv(srcdir, tgtdir, *, recurse=False, overwrite=False, hierarch=False,
+       fmt=defaultFmt, dry_run=False, verbose=0):
     """Move images to sorted directories
 
     Arguments:
-        kwargs {dict} -- command line arguments parsed by click library
+        srcdir {string} -- source directory
+        tgtdir {string} -- target directory
     """
-    pout(kwargs, kwargs["verbose"], Level.DEBUG)
-    sort(kwargs, moveImage)
-    pass
+    opts = dict(
+        recurse=recurse, overwrite=overwrite, hierarch=hierarch,
+        fmt=fmt, dry_run=dry_run, verbose=verbose,
+    )
+    pout({'srcdir': srcdir, 'tgtdir': tgtdir, **opts}, verbose, Level.DEBUG)
+    return sort(srcdir, tgtdir, func=moveImage, **opts)

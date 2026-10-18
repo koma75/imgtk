@@ -26,62 +26,33 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from enum import IntEnum
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from functools import partial
 from tqdm import tqdm
 
 
 import os
 import shutil
 from pprint import pformat
-import click
 from PIL import Image
 import imagehash
 
-class Level(IntEnum):
-    NOTSET = 0
-    DEBUG = 10
-    INFO = 20
-    WARNING = 30
-    ERROR = 40
-    CRITICAL = 50
+from .._logging import Level, pout
 
-def pout(msg=None, Verbose=0, level=Level.INFO, newline=True):
-    """stdout support method
-    All Error, Critical and Info are printed out.
-    while Warning and Debug are printed only with verbosity setting.
-    INFO -- Intended for standard output. output to STDOUT
-    DEBUG -- Intended for debug output. Shown only in verbosity>=2 output to STDOUT
-    WARNING -- Intended to show detailed warning. Shown only in verbosity>=1.  output to STDERR
-    ERROR -- Intended to show error.  output to STDERR
-    CRITICAL -- Intended to show critical error. output to STDERR
 
-    Keyword Arguments:
-        msg (string) -- message to print (default: {None})
-        Verbose (Int) -- Set True to print DEBUG message (default: {0})
-        level (Level) -- Set message level for coloring (default: {Level.INFO})
-        newline (bool) -- set to False if trailing new line is not needed (default: {True})
-    """
-    error=False
-    if level in {Level.NOTSET, Level.DEBUG}:
-        # blah
-        if Verbose < 2:
-            return
-        fg = 'magenta'
-    elif level == Level.INFO:
-        fg = 'green'
-    elif level == Level.WARNING:
-        if Verbose < 1:
-            return
-        fg = 'yellow'
-        error=True
-    elif level in {Level.ERROR, Level.CRITICAL}:
-        fg = 'red'
-        error=True
-    else:
-        fg = 'white'
-        pass
-    click.echo(click.style(str(msg), fg=fg), nl=newline, err=error)
+# Single source of truth mapping a short CLI hash name to the imagehash
+# callable used to hash an image.  Both the CLI option parser and find_dup
+# derive their behaviour from this table.
+HASH_FUNCS = {
+    'ahash': imagehash.average_hash,
+    'phash': imagehash.phash,
+    'dhash': imagehash.dhash,
+    'haar': imagehash.whash,
+    'db4': partial(imagehash.whash, mode='db4'),
+    'color': imagehash.colorhash,
+    'crop': imagehash.crop_resistant_hash,
+}
+
 
 def compute_hash(path, hashfunc, verbose):
     try:
@@ -91,67 +62,53 @@ def compute_hash(path, hashfunc, verbose):
         return None
 
 
-def find_dup(kwargs, hashmethod='ahash'):
+def is_image(filename):
+    f = filename.lower()
+    return f.endswith('.png') or f.endswith('.jpg') or \
+        f.endswith('.jpeg') or f.endswith('.bmp') or \
+        f.endswith('.jfif') or f.endswith('.gif') or '.jpg' in f or f.endswith('.svg')
+
+
+def find_dup(path, *, hashfunc=imagehash.dhash, hash_size=8, verbose=0):
     """Image Duplicate finder using Image Hash.
     Implementation.
 
     Args:
-        kwargs (dict): command line arguments parsed by Click library
+        path (string): directory with images to check for duplicates
+    Keyword Arguments:
+        hashfunc (callable): imagehash callable to hash images with
+        hash_size (int): hash size used for image hashing
+        verbose (int): verbosity level
+    Returns:
+        int -- process exit code (0 on success, non-zero on hard failure)
     """
-    verbose = kwargs["verbose"]
+    verbose = int(verbose)
     pout("Command line arguments:", verbose, Level.DEBUG)
-    pout(pformat(kwargs,depth=3,indent=4), verbose, Level.DEBUG)
+    pout(pformat({'path': path, 'hash_size': hash_size, 'verbose': verbose}, depth=3, indent=4), verbose, Level.DEBUG)
 
     # 1. Now parse arguments
 
-    hashsize = kwargs["hash_size"]
-    if hashsize < 1:
-        pout(f"Hash size must be a positive integer [{hashsize}]", verbose, Level.ERROR)
-        exit(1)
+    if hash_size < 1:
+        pout(f"Hash size must be a positive integer [{hash_size}]", verbose, Level.ERROR)
+        return 1
 
-    dir_path = kwargs["path"]
+    dir_path = path
     if not os.path.isdir(dir_path):
         pout(f"Path {dir_path} does not exist.  Specify directory with images.", verbose, Level.ERROR)
-        exit(1)
-
-    # Set the hash method based on input
-    if hashmethod == 'ahash':
-        hashfunc = imagehash.average_hash # type: ignore[assignment]
-    elif hashmethod == 'phash':
-        hashfunc = imagehash.phash # type: ignore[assignment]
-    elif hashmethod == 'dhash':
-        hashfunc = imagehash.dhash # type: ignore[assignment]
-    elif hashmethod == 'whash-haar':
-        hashfunc = imagehash.whash # type: ignore[assignment]
-    elif hashmethod == 'whash-db4':
-        def hashfunc(img):
-            return imagehash.whash(img, mode='db4')
-    elif hashmethod == 'colorhash':
-        hashfunc = imagehash.colorhash # type: ignore[assignment]
-    elif hashmethod == 'crop-resistant':
-        hashfunc = imagehash.crop_resistant_hash # type: ignore[assignment]
-    else:
-        pout("no hash method set, falling back to difference hash", verbose, Level.WARNING)
-        hashfunc = imagehash.dhash # type: ignore[assignment]
+        return 1
 
     # 2. and do it's bidding
     # Initialize image sort dictionary (key=hash, value=array of image paths with that hash value)
     himages = {}
 
     # Find image files and put them in an array
-    def is_image(filename):
-        f = filename.lower()
-        return f.endswith('.png') or f.endswith('.jpg') or \
-            f.endswith('.jpeg') or f.endswith('.bmp') or \
-            f.endswith('.jfif') or f.endswith('.gif') or '.jpg' in f or f.endswith('.svg')
-
     image_paths = []
-    image_paths += [os.path.join(dir_path, path) for path in os.listdir(dir_path) if is_image(path)]
+    image_paths += [os.path.join(dir_path, p) for p in os.listdir(dir_path) if is_image(p)]
     pout(image_paths, verbose, Level.DEBUG)
 
     if len(image_paths) == 0:
         pout(f"No images found inside {dir_path}", verbose, Level.INFO)
-        exit(0)
+        return 0
 
     with ProcessPoolExecutor() as executor:
         futures = [executor.submit(compute_hash, img, hashfunc, verbose) for img in image_paths]
@@ -184,4 +141,4 @@ def find_dup(kwargs, hashmethod='ahash'):
                 pout(f"{img} to {os.path.join(hashdir,os.path.basename(img))}", verbose, Level.DEBUG)
                 shutil.move(img, os.path.join(hashdir,os.path.basename(img)))
 
-    pass
+    return 0

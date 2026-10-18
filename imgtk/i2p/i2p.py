@@ -26,9 +26,6 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from enum import IntEnum
-
-
 import yaml
 import os
 import glob
@@ -38,50 +35,13 @@ import click
 from fpdf import FPDF
 from PIL import Image
 
-class Level(IntEnum):
-    NOTSET = 0
-    DEBUG = 10
-    INFO = 20
-    WARNING = 30
-    ERROR = 40
-    CRITICAL = 50
+from .._logging import Level, pout
 
-def pout(msg=None, Verbose=0, level=Level.INFO, newline=True):
-    """stdout support method
-    All Error, Critical and Info are printed out.
-    while Warning and Debug are printed only with verbosity setting.
-    INFO -- Intended for standard output. output to STDOUT
-    DEBUG -- Intended for debug output. Shown only in verbosity>=2 output to STDOUT
-    WARNING -- Intended to show detailed warning. Shown only in verbosity>=1.  output to STDERR
-    ERROR -- Intended to show error.  output to STDERR
-    CRITICAL -- Intended to show critical error. output to STDERR
 
-    Keyword Arguments:
-        msg (string) -- message to print (default: {None})
-        Verbose (Int) -- Set True to print DEBUG message (default: {0})
-        level (Level) -- Set message level for coloring (default: {Level.INFO})
-        newline (bool) -- set to False if trailing new line is not needed (default: {True})
-    """
-    error=False
-    if level in {Level.NOTSET, Level.DEBUG}:
-        # blah
-        if Verbose < 2:
-            return
-        fg = 'magenta'
-    elif level == Level.INFO:
-        fg = 'green'
-    elif level == Level.WARNING:
-        if Verbose < 1:
-            return
-        fg = 'yellow'
-        error=True
-    elif level in {Level.ERROR, Level.CRITICAL}:
-        fg = 'red'
-        error=True
-    else:
-        fg = 'white'
-        pass
-    click.echo(click.style(str(msg), fg=fg), nl=newline, err=error)
+DEFAULT_CONFIG = "./imgtk-join.yml"
+DEFAULT_DPI = 96
+DEFAULT_OUT = "output.pdf"
+DEFAULT_TOC = "toc.yml"
 
 
 def createConf(conf, verbose):
@@ -106,8 +66,10 @@ def createConf(conf, verbose):
         pout("could not create {file}: {err}".format(file=conf, err=e), verbose, Level.ERROR)
     pass
 
+
 def pixelmm(dpi):
     return float(1/dpi)*25.4
+
 
 numbers = re.compile(r'(\d+)')
 def numericalSort(value):
@@ -115,44 +77,66 @@ def numericalSort(value):
     parts[1::2] = map(int, parts[1::2])
     return parts
 
-def join(kwargs):
+
+def join(img, *, config=DEFAULT_CONFIG, out=None, toc=None, ext=(), dpi=None, verbose=0):
     """Convert set of images to PDF.
     Implementation.
 
     Args:
-        kwargs (dict): command line arguments parsed by Click library
+        img (tuple): image files/directories to merge, in order
+    Keyword Arguments:
+        config (string) -- yaml config file path
+        out (string) -- output PDF filename
+        toc (string) -- TOC file used to populate the PDF outline
+        ext (sequence) -- file extensions to pick up inside directories
+        dpi (int) -- pixel density of the input images
+        verbose (int) -- verbosity level
+    Returns:
+        int -- process exit code (0 on success, non-zero on hard failure)
     """
-    verbose = kwargs["verbose"]
+    verbose = int(verbose)
+    params = {
+        'img': list(img),
+        'config': config,
+        'out': out,
+        'toc': toc,
+        'ext': list(ext),
+        'dpi': dpi,
+        'verbose': verbose,
+    }
     pout("Command line arguments:", verbose, Level.DEBUG)
-    pout(pformat(kwargs,depth=3,indent=4), verbose, Level.DEBUG)
-
+    pout(pformat(params,depth=3,indent=4), verbose, Level.DEBUG)
 
     # 0. Get information from config.yml
     # If file does not exist, create a default config file
-    if not os.path.exists(kwargs['config']):
-        createConf(kwargs['config'], verbose)
+    if not os.path.exists(config):
+        createConf(config, verbose)
     try:
-        with click.open_file(kwargs['config'], 'r') as cnf:
-            conf = yaml.safe_load(cnf)
+        with click.open_file(config, 'r') as cnf:
+            conf = yaml.safe_load(cnf) or {}
     except Exception as e:
-        pout("could not open config file: {file}".format(file=kwargs['config']), verbose, Level.ERROR)
+        pout("could not open config file: {file}".format(file=config), verbose, Level.ERROR)
         pout("{error}".format(error=e), verbose, Level.DEBUG)
-        return
+        return 1
 
     pout("Read config file:", verbose, Level.DEBUG)
     pout(pformat(conf,depth=3,indent=4), verbose, Level.DEBUG)
     # 1. Now parse kwargs
-    conf['ext'].extend(kwargs['ext'])
-    conf['ext'] = sorted(set(conf['ext']))
-    conf['img'] = kwargs['img']
+    conf['ext'] = sorted(set(list(conf.get('ext') or []) + list(ext)))
+    conf['img'] = list(img)
 
     # overwrite some parameters if given in command line
-    if kwargs['toc']:
-        conf['toc'] = kwargs['toc']
-    if kwargs['out']:
-        conf['out'] = kwargs['out']
-    if kwargs['dpi']:
-        conf['dpi'] = kwargs['dpi']
+    if toc:
+        conf['toc'] = toc
+    if out:
+        conf['out'] = out
+    if dpi:
+        conf['dpi'] = dpi
+
+    # provide safe defaults for anything the config file omitted
+    conf.setdefault('toc', None)
+    conf.setdefault('out', DEFAULT_OUT)
+    conf.setdefault('dpi', DEFAULT_DPI)
     pout("Operating parameter:")
     pout(pformat(conf,depth=3,indent=4), verbose, Level.INFO)
 
@@ -161,7 +145,7 @@ def join(kwargs):
     # Check if there are any files in img. if empty exit gracefully
     if len(conf['img']) == 0:
         pout("nothing to parse", verbose, Level.INFO)
-        return
+        return 0
 
     # for each img merge into one list of image files
     #   for direcotry, parse for files with specified extensions
@@ -231,6 +215,7 @@ def join(kwargs):
     # Write out result
     try:
         pdf.output(conf['out'])
+        return 0
     except Exception as e:
         pout(e,verbose, Level.ERROR)
-    pass
+        return 1
