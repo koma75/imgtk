@@ -110,16 +110,13 @@ Options:
       `default` (do not keep the PDF generator's default /OpenAction),
       `none` (same, remove it), `actual` (open at 100%), `NN%` (fixed
       magnification such as `150%` or `75%`), or one of the
-      `pikepdf.models.outlines.PageLocation` entries spelled with
-      underscores: `fit_page` (`/Fit`), `fit_width` (`/FitH`),
+      following: `fit_page` (`/Fit`), `fit_width` (`/FitH`),
       `fit_height` (`/FitV`), `fit_visible` (`/FitB`),
       `fit_visible_width` (`/FitBH`), `fit_visible_height` (`/FitBV`).
   * default: `default` (no `/OpenAction` in the output, so the viewer
       decides; the PDF generator would otherwise have written a
       full-width `/OpenAction`).
-  * `none` and `default` have the same effect here: both remove the
-      `/OpenAction` that fpdf writes by default.  Distinguished for symmetry
-      with the other catalog options.
+  * `none` and `default` have the same effect.
 * `-v, --verbose`
   * output in verbose mode
   * specify twice to get debug messages
