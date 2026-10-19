@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := build
-.PHONY: build freeze publish package publish pubtest clean venv install
+.PHONY: build freeze publish package publish pubtest clean venv install test
 PROJ_NAME = imgtk
 PY_VERSION = 3.9
 SHELL = bash
@@ -33,4 +33,7 @@ venv: .venv
 
 install:
 	pip install -r requirements.txt
+
+test:
+	.venv/bin/python test_harness.py
 

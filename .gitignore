@@ -132,3 +132,7 @@ test/
 venv.bat
 imgtk/_version.py
 *.whl
+
+# imgtk CLI test harness scratch data (generated fixtures + tool outputs)
+testharness/
+harness_out.txt
