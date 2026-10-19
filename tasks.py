@@ -82,15 +82,14 @@ def pubtest(c):
     c.run(f"{VENV_PY} -m twine upload --repository pypitest dist/*")
     pass
 
-@task(pre=[build])
-def test(c):
-    """Run the CLI test harness (fixtures/outputs under testharness/)"""
-    c.run(f"{VENV_PY} test_harness.py")
-    pass
-
-
 @task(pre=[venv], default=True)
 def build(c):
     """Build and install as editable"""
     c.run(f"{VENV_PY} -m pip install --editable .")
+    pass
+
+@task(pre=[build])
+def test(c):
+    """Run the CLI test harness (fixtures/outputs under testharness/)"""
+    c.run(f"{VENV_PY} test_harness.py")
     pass
