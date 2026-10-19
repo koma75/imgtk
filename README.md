@@ -46,6 +46,16 @@ Options:
                               (default: TwoPageRight)
   -D, --direction <dir>       reading order (/Direction) in the PDF viewer
                               preferences: L2R, R2L, none (default: R2L)
+  -m, --page-mode <mode>      initial view mode (/PageMode) in the PDF
+                              document catalog: UseOutlines, UseNone, UseOC,
+                              UseAttachments, FullScreen, none (default: UseOutlines
+                              when a TOC outline was written, otherwise
+                              no entry)
+  -z, --zoom <zoom>           initial magnification (/OpenAction Go To on the
+                              first page): default, none, actual, NN% such as
+                              150%, fit_page, fit_width, fit_height, fit_visible,
+                              fit_visible_width, fit_visible_height (default:
+                              default, i.e. do not write an /OpenAction)
   -v, --verbose               output in verbose mode
   -h, --help                  Show this message and exit.
 ~~~
@@ -85,6 +95,31 @@ Options:
       open the document as a right-to-left book.
   * `none` removes `/Direction` from the PDF, letting the PDF default
       (`L2R`) apply.  Leaving the option out selects the default instead.
+* `-m, --page-mode <mode>`
+  * initial view mode (`/PageMode`) written into the PDF document catalog.
+      `<mode>` is one of `UseOutlines`, `UseNone`, `UseOC`, `UseAttachments`,
+      `FullScreen` or `none`.
+  * default: `UseOutlines` when the run wrote a PDF outline (i.e. a
+      `toc.yml`-based outline was emitted), otherwise the entry is left out
+      of the PDF entirely.
+  * `none` removes `/PageMode` from the PDF even when an outline was written.
+      Leaving the option out selects the auto default above instead.
+* `-z, --zoom <zoom>`
+  * initial magnification written as an `/OpenAction` Go To action on the
+      first page (PDF 32000-2008 section 3.3.6).  `<zoom>` is one of:
+      `default` (do not keep the PDF generator's default /OpenAction),
+      `none` (same, remove it), `actual` (open at 100%), `NN%` (fixed
+      magnification such as `150%` or `75%`), or one of the
+      `pikepdf.models.outlines.PageLocation` entries spelled with
+      underscores: `fit_page` (`/Fit`), `fit_width` (`/FitH`),
+      `fit_height` (`/FitV`), `fit_visible` (`/FitB`),
+      `fit_visible_width` (`/FitBH`), `fit_visible_height` (`/FitBV`).
+  * default: `default` (no `/OpenAction` in the output, so the viewer
+      decides; the PDF generator would otherwise have written a
+      full-width `/OpenAction`).
+  * `none` and `default` have the same effect here: both remove the
+      `/OpenAction` that fpdf writes by default.  Distinguished for symmetry
+      with the other catalog options.
 * `-v, --verbose`
   * output in verbose mode
   * specify twice to get debug messages
@@ -115,20 +150,27 @@ direction: R2L
 
 ### PDF viewer defaults (document catalog)
 
-`join` writes two entries into the PDF document catalog so viewers such as
+`join` writes four entries into the PDF document catalog so viewers such as
 Adobe Acrobat open the generated book the way the scanned pages are meant to be
-read.  Both keys follow the PDF 32000-2008 specification and can be set in the
+read.  The keys follow the PDF 32000-2008 specification and can be set in the
 configuration file or on the command line (command line wins):
 
 | config key      | command line          | PDF catalog entry              | default       |
 | :--             | :--                 | :--                            | :--           |
 | `page_layout`   | `-P, --page-layout` | `/PageLayout` (Table 3.2)      | `TwoPageRight` |
 | `direction`     | `-D, --direction`   | `/ViewerPreferences /Direction` (Table 3.22) | `R2L` |
+| `page_mode`     | `-m, --page-mode`   | `/PageMode` (Table 3.2)        | `UseOutlines` if the run wrote an outline, otherwise omitted |
+| `zoom`          | `-z, --zoom`        | `/OpenAction` (Table 3.3.6) Go To on page 1 | no entry |
 
 Valid `page_layout` values are `SinglePage`, `OneColumn`, `TwoColumnLeft`,
 `TwoColumnRight`, `TwoPageLeft` and `TwoPageRight`; the two `TwoPage*` values
 raise the generated file to PDF 1.5 as the specification requires.
 Valid `direction` values are `L2R` and `R2L`.
+Valid `page_mode` values are `UseOutlines`, `UseNone`, `UseOC`,
+`UseAttachments` and `FullScreen`.
+Valid `zoom` values are `default`, `none`, `actual`, `NN%` (e.g. `150%`,
+`75%`) and the six magnification keywords `fit_page`, `fit_width`,
+`fit_height`, `fit_visible`, `fit_visible_width`, `fit_visible_height`.
 
 Each key has three states, and they are not all the same thing:
 

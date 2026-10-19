@@ -91,13 +91,27 @@ def cli():
     help='reading order (/Direction) in the PDF viewer preferences: L2R, R2L, none (default: R2L)'
     )
 @click.option(
+    '--page-mode', '-m', default=None,
+    metavar='<mode>',
+    type=click.Choice(['UseOutlines', 'UseNone', 'UseOC',
+                       'UseAttachments', 'FullScreen', 'none'],
+                      case_sensitive=False),
+    help='initial view mode (/PageMode) in the PDF document catalog: UseOutlines, UseNone, UseOC, UseAttachments, FullScreen, none (default: UseOutlines when a TOC outline was written, otherwise no entry)'
+    )
+@click.option(
+    '--zoom', '-z', default=None,
+    metavar='<zoom>',
+    help='initial magnification (/OpenAction Go To on the first page): default, none, actual, NN% such as 150%, fit_page, fit_width, fit_height, fit_visible, fit_visible_width, fit_visible_height (default: default, i.e. do not write an /OpenAction)'
+    )
+@click.option(
     '--verbose', '-v', count=True,
     help='output in verbose mode'
     )
-def join(img, config, out, toc, ext, dpi, page_layout, direction, verbose):
+def join(img, config, out, toc, ext, dpi, page_layout, direction, page_mode, zoom, verbose):
     """Join images into one PDF file"""
     rc = i2p_join(img, config=config, out=out, toc=toc, ext=ext, dpi=dpi,
-                  page_layout=page_layout, direction=direction, verbose=verbose)
+                  page_layout=page_layout, direction=direction,
+                  page_mode=page_mode, zoom=zoom, verbose=verbose)
     if rc:
         raise SystemExit(rc, "Failed to join images into PDF")
 

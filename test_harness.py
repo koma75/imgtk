@@ -320,6 +320,37 @@ def pdf_direction(data):
     return direction.group(1).decode() if direction else None
 
 
+def pdf_page_mode(data):
+    """/PageMode name in the document catalog (PDF32000 Table 3.2), or None."""
+    m = re.search(rb"/PageMode\s*/([A-Za-z0-9]+)", pdf_catalog(data))
+    return m.group(1).decode() if m else None
+
+
+def pdf_open_action(data):
+    """The /OpenAction in the document catalog as a compact summary string.
+
+    Returns a string like ``"page=1,fit=FitH"`` or ``"page=1,xyz,zoom=1.5"``
+    for an explicit array, or ``"none"`` when the entry is not present.  The
+    catalog /OpenAction is either an inline array ``[page /Fit null]`` (which
+    fpdf writes by default) or, after our join writes it, a Go To dictionary
+    ``<</D [page /Loc ...] /S /GoTo>>``.
+    """
+    cat = pdf_catalog(data)
+    m = re.search(rb"/OpenAction\s*(\[|<<)", cat)
+    if not m:
+        return "none"
+    tail = cat[m.end():]
+    kind = m.group(1).decode()
+    fit = re.search(rb"/(Fit|FitH|FitV|FitB|FitBH|FitBV)\b", tail)
+    xyz = re.search(rb"/XYZ\s+null\s+null\s+([0-9.]+|null)", tail)
+    if fit:
+        return "page=1,fit={0}".format(fit.group(1).decode())
+    if xyz:
+        z = xyz.group(1).decode()
+        return "page=1,xyz,zoom={0}".format(z)
+    return "page=1,other"
+
+
 def pdf_check(data):
     if not data.startswith(b"%PDF-"):
         raise AssertionError("output is not a PDF (missing %PDF- header)")
@@ -538,6 +569,84 @@ class JoinTests(unittest.TestCase):
         rc, out, err = run_cli(["join", "join/srcdir", "-D", "TTB"], cwd=root, expect_rc=None)
         self.assertNotEqual(rc, 0, "invalid --direction value was accepted")
         self.assertIn("not one of", out + err, "invalid --direction value not rejected by the cli")
+        rc, out, err = run_cli(["join", "join/srcdir", "-z", "banana"], cwd=root, expect_rc=1)
+        self.assertIn("invalid zoom", out + err, "invalid --zoom value not reported by the resolver")
+
+    # ---------------- /PageMode and /OpenAction ----------------
+    def test_join_page_mode_option(self):
+        root = scenario("join_page_mode", src=FIXTURES / "join")
+        rc, out, err = run_cli(["join", "join/srcdir", "-o", "pm_out.pdf", "-m", "UseOutlines"], cwd=root)
+        data = expect_pdf(root, "pm_out.pdf", JOIN_ORDER_DEFAULT, 96, "-m UseOutlines")
+        self.assertEqual(pdf_page_mode(data), "UseOutlines",
+                         "-m UseOutlines produced /PageMode {0}".format(pdf_page_mode(data)))
+        run_cli(["join", "join/srcdir", "-o", "pm_none.pdf", "-m", "none"], cwd=root)
+        data = expect_pdf(root, "pm_none.pdf", JOIN_ORDER_DEFAULT, 96, "-m none")
+        self.assertIsNone(pdf_page_mode(data),
+                          "-m none must remove /PageMode, found {0}".format(pdf_page_mode(data)))
+
+    def test_join_page_mode_auto_default_from_toc(self):
+        # an outline written from toc.yml selects /PageMode UseOutlines when
+        # the option is omitted; with no outline the entry is omitted too
+        root = scenario("join_pmauto", src=FIXTURES / "join")
+        rc, out, err = run_cli(["join", "join/srcdir", "-o", "tocauto.pdf",
+                                "-t", "join/toc.yml"], cwd=root)
+        data = expect_pdf(root, "tocauto.pdf", JOIN_ORDER_DEFAULT, 96, "outline auto default")
+        outlines = expect_pdf_toc(data, TOC_FIXTURE, "outline auto default")
+        self.assertEqual(pdf_page_mode(data), "UseOutlines",
+                         "when the run wrote an outline, page_mode auto default must produce /PageMode UseOutlines, found {0}".format(pdf_page_mode(data)))
+        run_cli(["join", "join/srcdir", "-o", "noauto.pdf"], cwd=root)
+        data = expect_pdf(root, "noauto.pdf", JOIN_ORDER_DEFAULT, 96, "no outline")
+        self.assertIsNone(pdf_page_mode(data),
+                          "no outline written must leave /PageMode absent, found {0}".format(pdf_page_mode(data)))
+
+    def test_join_zoom_option(self):
+        root = scenario("join_zoom", src=FIXTURES / "join")
+        run_cli(["join", "join/srcdir", "-o", "z150.pdf", "-z", "150%"], cwd=root)
+        data = expect_pdf(root, "z150.pdf", JOIN_ORDER_DEFAULT, 96, "-z 150%")
+        self.assertEqual(pdf_open_action(data), "page=1,xyz,zoom=1.5",
+                         "-z 150% wrote an /OpenAction {0}".format(pdf_open_action(data)))
+        run_cli(["join", "join/srcdir", "-o", "zfit.pdf", "-z", "fit_page"], cwd=root)
+        data = expect_pdf(root, "zfit.pdf", JOIN_ORDER_DEFAULT, 96, "-z fit_page")
+        self.assertEqual(pdf_open_action(data), "page=1,fit=Fit",
+                         "-z fit_page wrote /OpenAction {0}".format(pdf_open_action(data)))
+        run_cli(["join", "join/srcdir", "-o", "zact.pdf", "-z", "actual"], cwd=root)
+        data = expect_pdf(root, "zact.pdf", JOIN_ORDER_DEFAULT, 96, "-z actual")
+        self.assertEqual(pdf_open_action(data), "page=1,xyz,zoom=1",
+                         "-z actual wrote /OpenAction {0}".format(pdf_open_action(data)))
+
+    def test_join_default_omits_open_action(self):
+        # fpdf writes a /FitH /OpenAction by default; the tool's default must
+        # remove that entry so the viewer's own preference wins.
+        root = scenario("join_noaction", src=FIXTURES / "join")
+        run_cli(["join", "join/srcdir", "-o", "noaction.pdf"], cwd=root)
+        data = expect_pdf(root, "noaction.pdf", JOIN_ORDER_DEFAULT, 96, "no /OpenAction")
+        self.assertEqual(pdf_open_action(data), "none",
+                         "default must not keep the generator's /OpenAction, found {0}".format(pdf_open_action(data)))
+        run_cli(["join", "join/srcdir", "-o", "znone.pdf", "-z", "none"], cwd=root)
+        data = expect_pdf(root, "znone.pdf", JOIN_ORDER_DEFAULT, 96, "-z none")
+        self.assertEqual(pdf_open_action(data), "none",
+                         "-z none must remove /OpenAction, found {0}".format(pdf_open_action(data)))
+
+    def test_join_zoom_and_page_mode_from_config(self):
+        root = scenario("join_zoomcfg", src=FIXTURES / "join")
+        (root / "zm.yml").write_text(
+            "out: zmcfg.pdf\npage_mode: fullscreen\nzoom: fit_width\n"
+            "ext:\n  - jpg\n  - png\n"
+        )
+        rc, out, err = run_cli(["join", "join/srcdir", "-c", "zm.yml"], cwd=root)
+        data = expect_pdf(root, "zmcfg.pdf", JOIN_ORDER_DEFAULT, 96, "config page_mode/zoom")
+        self.assertEqual(pdf_page_mode(data), "FullScreen",
+                         "config 'page_mode: fullscreen' produced /PageMode {0}".format(pdf_page_mode(data)))
+        self.assertEqual(pdf_open_action(data), "page=1,fit=FitH",
+                         "config 'zoom: fit_width' produced /OpenAction {0}".format(pdf_open_action(data)))
+        # command line takes precedence over the configuration file
+        rc, out, err = run_cli(["join", "join/srcdir", "-c", "zm.yml",
+                                "-m", "UseNone", "-z", "fit_height", "-o", "zmcli.pdf"], cwd=root)
+        data = expect_pdf(root, "zmcli.pdf", JOIN_ORDER_DEFAULT, 96, "cli overrides config zoom/page_mode")
+        self.assertEqual(pdf_page_mode(data), "UseNone",
+                         "cli --page-mode did not override the config value: {0}".format(pdf_page_mode(data)))
+        self.assertEqual(pdf_open_action(data), "page=1,fit=FitV",
+                         "cli --zoom did not override the config value: {0}".format(pdf_open_action(data)))
 
 
 # ================================================================ sort tests
@@ -856,6 +965,7 @@ OPTION_CLAIMS = {
         "options": ["-c, --config <cfg>", "-o, --out <out>", "-t, --toc <toc>",
                     "-e, --ext <ext>", "-d, --dpi <dpi>",
                     "-P, --page-layout <layout>", "-D, --direction <dir>",
+                    "-m, --page-mode <mode>", "-z, --zoom <zoom>",
                     "-v, --verbose", "-h, --help"],
     },
     "sort": {

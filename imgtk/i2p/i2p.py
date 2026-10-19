@@ -38,6 +38,7 @@ from PIL import Image
 # Document catalog settings (PageLayout / ViewerPreferences) are written with
 # pikepdf, which emits the name values required by the PDF specification.
 from pikepdf import Pdf, Dictionary, Name, ObjectStreamMode
+from pikepdf.models.outlines import PageLocation, Destination
 
 from .._logging import Level, pout
 
@@ -48,6 +49,8 @@ DEFAULT_OUT = "output.pdf"
 DEFAULT_TOC = "toc.yml"
 DEFAULT_PAGE_LAYOUT = "TwoPageRight"
 DEFAULT_DIRECTION = "R2L"
+DEFAULT_PAGE_MODE = None
+DEFAULT_ZOOM = "default"
 
 # PDF 32000-2008 Table 3.2 (Document Catalog) -- /PageLayout
 PAGE_LAYOUT_NAMES = {
@@ -64,6 +67,24 @@ DIRECTION_NAMES = {
     'l2r': 'L2R',
     'r2l': 'R2L',
     'none': None,
+}
+# PDF 32000-2008 Table 3.2 (Document Catalog) -- /PageMode
+PAGE_MODE_NAMES = {
+    'useoutlines': 'UseOutlines',
+    'useattachments': 'UseAttachments',
+    'usenone': 'UseNone',
+    'useoc': 'UseOC',
+    'fullscreen': 'FullScreen',
+    'none': None,
+}
+# pikepdf.models.outlines.PageLocation entries used for /OpenAction
+ZOOM_LOCATIONS = {
+    'fitpage': ('Fit', {}),
+    'fitwidth': ('FitH', {'top': None}),
+    'fitheight': ('FitV', {'left': None}),
+    'fitvisible': ('FitB', {}),
+    'fitvisiblewidth': ('FitBH', {'top': None}),
+    'fitvisibleheight': ('FitBV', {'left': None}),
 }
 
 
@@ -127,6 +148,53 @@ def pdfName(value, names, key):
     return names[token], None
 
 
+def zoomValue(value):
+    """Resolve a magnification setting to a resolved /OpenAction plan.
+
+    The initial magnification of the generated document is written as the
+    target of an /OpenAction Go To action on the first page (PDF 32000-2008
+    section 3.3.6).  The page location is one of the /XYZ /Fit /FitH /FitV /FitB
+    /FitBH /FitBV entries of pikepdf.models.outlines.PageLocation; the second
+    element of the tuple carries the viewport parameters that go with it.
+
+    Args:
+        value (string): value read from the configuration or command line
+    Returns:
+        tuple (result|string|None, string|None): on success *result* is one of
+            None -- 'default' or unset: do not keep the /OpenAction the PDF
+                     generator would otherwise have written
+            'none' -- remove any /OpenAction already in the PDF
+            (loc, args) tuple -- write an /OpenAction Go To whose /D target
+                     is (loc, args); loc is 'XYZ' or one of the Fit* names
+            and the second element of the tuple is the error message (None
+            when the value resolved).
+    """
+    if value is None:
+        return None, None
+    token = re.sub(r'[-_ ]', '', str(value)).lower()
+    if token in ('default', ''):
+        return None, None
+    if token == 'none':
+        return 'none', None
+    if token in ('actual', 'actualsize', '100%', '1'):
+        return ('XYZ', {'zoom': 1.0}), None
+    pct = re.fullmatch(r'(\d+(?:\.\d+)?)%', token)
+    if pct:
+        zoom = float(pct.group(1)) / 100.0
+        if zoom <= 0:
+            return None, "invalid zoom: {value} (magnification must be positive)".format(value=value)
+        return ('XYZ', {'zoom': zoom}), None
+    if token in ZOOM_LOCATIONS:
+        loc, kwargs = ZOOM_LOCATIONS[token]
+        return (loc, dict(kwargs)), None
+    return None, (
+        "invalid zoom: {value} "
+        "(expected 'default', 'none', 'actual', 'NN%' such as '150%' "
+        "or one of fit_page, fit_width, fit_height, "
+        "fit_visible, fit_visible_width, fit_visible_height)"
+    ).format(value=value)
+
+
 def temp_out(out, workdir):
     """Create a temporary file in the same directory as out.
 
@@ -166,7 +234,10 @@ def remove_tmp(paths, verbose=0):
 
 
 def writePdf(pdf, out, page_layout: str | None = DEFAULT_PAGE_LAYOUT,
-             direction: str | None = DEFAULT_DIRECTION, verbose=0):
+             direction: str | None = DEFAULT_DIRECTION,
+             page_mode: str | None = DEFAULT_PAGE_MODE,
+             zoom: tuple | str | None = DEFAULT_ZOOM,
+             verbose=0):
     """Write out the generated PDF, setting document catalog viewer defaults.
 
     The document is composed by fpdf into a temporary file, reopened with
@@ -181,6 +252,11 @@ def writePdf(pdf, out, page_layout: str | None = DEFAULT_PAGE_LAYOUT,
         out (string): output PDF filename
         page_layout (string|None): PDF /PageLayout name, None removes the entry
         direction (string|None): ViewerPreferences /Direction name, None removes it
+        page_mode (string|None): PDF /PageMode name (Table 3.2), None removes the entry
+        zoom (string|None): resolved magnification setting from zoomValue():
+              'default' means write no /OpenAction, 'none' removes any
+              /OpenAction that fpdf might have written, and otherwise
+              'XYZ' or one of the Fit* PageLocation entries is set
         verbose (int): verbosity level
     Returns:
         int -- process exit code (0 on success, non-zero on hard failure)
@@ -189,8 +265,10 @@ def writePdf(pdf, out, page_layout: str | None = DEFAULT_PAGE_LAYOUT,
         pout('PageLayout is removed from the document catalog', verbose, Level.WARNING)
     if direction is None:
         pout('ViewerPreferences Direction is removed from the document catalog', verbose, Level.WARNING)
-    pout("document catalog: PageLayout={page_layout}, Direction={direction}".format(
-        page_layout=page_layout, direction=direction), verbose, Level.DEBUG)
+    if page_mode is None:
+        pout('PageMode is removed from the document catalog', verbose, Level.WARNING)
+    pout("document catalog: PageLayout={page_layout}, Direction={direction}, PageMode={page_mode}, Zoom={zoom}".format(
+        page_layout=page_layout, direction=direction, page_mode=page_mode, zoom=zoom), verbose, Level.DEBUG)
 
     staged = None
     result = None
@@ -224,6 +302,51 @@ def writePdf(pdf, out, page_layout: str | None = DEFAULT_PAGE_LAYOUT,
                 if len(viewer_prefs) == 0:
                     del catalog['/ViewerPreferences']
 
+            if page_mode:
+                catalog.PageMode = Name("/{0}".format(page_mode))
+            elif '/PageMode' in catalog:
+                del catalog['/PageMode']
+
+            if isinstance(zoom, tuple):
+                loc, args = zoom[0], dict(zoom[1])
+                if len(composed.pages) == 0:
+                    pout('zoom setting ignored: the document has no page to point at', verbose, Level.WARNING)
+                else:
+                    first = composed.pages[0].obj
+                    if loc == 'XYZ':
+                        dest = Destination(first, PageLocation.XYZ,
+                                           left=args.get('left'),
+                                           top=args.get('top'),
+                                           zoom=args.get('zoom'))
+                    elif loc == 'Fit':
+                        dest = Destination(first, PageLocation.Fit)
+                    elif loc == 'FitB':
+                        dest = Destination(first, PageLocation.FitB)
+                    elif loc == 'FitH':
+                        dest = Destination(first, PageLocation.FitH,
+                                           top=args.get('top'))
+                    elif loc == 'FitV':
+                        dest = Destination(first, PageLocation.FitV,
+                                           left=args.get('left'))
+                    elif loc == 'FitBH':
+                        dest = Destination(first, PageLocation.FitBH,
+                                           top=args.get('top'))
+                    elif loc == 'FitBV':
+                        dest = Destination(first, PageLocation.FitBV,
+                                           left=args.get('left'))
+                    else:
+                        dest = None
+                    if dest is not None:
+                        catalog.OpenAction = Dictionary(
+                            S=Name.GoTo,
+                            D=dest.to_array(),
+                        )
+            else:
+                # default and 'none' both mean: do not keep whatever /OpenAction
+                # the underlying PDF generator happened to write
+                if '/OpenAction' in catalog:
+                    del catalog['/OpenAction']
+
             # /TwoPageLeft and /TwoPageRight are only defined for PDF 1.5 and later
             composed.save(
                 result,
@@ -244,7 +367,7 @@ def writePdf(pdf, out, page_layout: str | None = DEFAULT_PAGE_LAYOUT,
 
 
 def join(img, *, config=DEFAULT_CONFIG, out=None, toc=None, ext=(), dpi=None,
-         page_layout=None, direction=None, verbose=0):
+         page_layout=None, direction=None, page_mode=None, zoom=None, verbose=0):
     """Convert set of images to PDF.
     Implementation.
 
@@ -258,6 +381,17 @@ def join(img, *, config=DEFAULT_CONFIG, out=None, toc=None, ext=(), dpi=None,
         dpi (int) -- pixel density of the input images
         page_layout (string) -- /PageLayout name for the document catalog, 'none' removes the entry
         direction (string) -- ViewerPreferences /Direction name 'L2R' or 'R2L', 'none' removes the entry
+        page_mode (string) -- /PageMode name for the document catalog: 'use_outlines',
+            'use_none', 'use_oc', 'use_attachments', 'full_screen' or 'none'.  When
+            omitted from both the config file and the command line the tool picks
+            'use_outlines' if a PDF outline was written, otherwise leaves the
+            entry out entirely.
+        zoom (string) -- initial magnification, written as the /OpenAction
+            Go To action on the first page: 'default' (do nothing), 'none'
+            (remove any preexisting /OpenAction), 'actual' (100%), 'NN%'
+            (fixed magnification such as '150%'), or one of 'fit_page',
+            'fit_width', 'fit_height', 'fit_visible',
+            'fit_visible_width', 'fit_visible_height'
         verbose (int) -- verbosity level
     Returns:
         int -- process exit code (0 on success, non-zero on hard failure)
@@ -272,6 +406,8 @@ def join(img, *, config=DEFAULT_CONFIG, out=None, toc=None, ext=(), dpi=None,
         'dpi': dpi,
         'page_layout': page_layout,
         'direction': direction,
+        'page_mode': page_mode,
+        'zoom': zoom,
         'verbose': verbose,
     }
     pout("Command line arguments:", verbose, Level.DEBUG)
@@ -306,6 +442,10 @@ def join(img, *, config=DEFAULT_CONFIG, out=None, toc=None, ext=(), dpi=None,
         conf['page_layout'] = page_layout
     if direction:
         conf['direction'] = direction
+    if page_mode:
+        conf['page_mode'] = page_mode
+    if zoom:
+        conf['zoom'] = zoom
 
     # provide safe defaults for anything the config file omitted
     conf.setdefault('toc', None)
@@ -313,6 +453,10 @@ def join(img, *, config=DEFAULT_CONFIG, out=None, toc=None, ext=(), dpi=None,
     conf.setdefault('dpi', DEFAULT_DPI)
     conf.setdefault('page_layout', DEFAULT_PAGE_LAYOUT)
     conf.setdefault('direction', DEFAULT_DIRECTION)
+    conf.setdefault('zoom', DEFAULT_ZOOM)
+    # page_mode has no static default: the tool picks use_outlines when an
+    # outline was written and omits the entry otherwise.  Keep the raw
+    # config-file value (or None if unset) and resolve it after the loop.
     pout("Operating parameter:")
     pout(pformat(conf,depth=3,indent=4), verbose, Level.INFO)
 
@@ -325,6 +469,11 @@ def join(img, *, config=DEFAULT_CONFIG, out=None, toc=None, ext=(), dpi=None,
     if error:
         pout(error, verbose, Level.ERROR)
         return 1
+    zoom, error = zoomValue(conf['zoom'])
+    if error:
+        pout(error, verbose, Level.ERROR)
+        return 1
+    raw_page_mode = conf.get('page_mode')
 
     # 2. Main application logic
 
@@ -370,6 +519,7 @@ def join(img, *, config=DEFAULT_CONFIG, out=None, toc=None, ext=(), dpi=None,
     pixelsize = pixelmm(conf['dpi'])
     pout("pixelsize: {size}".format(size=pixelsize), verbose, Level.DEBUG)
     pageNum = 0
+    outline_written = False
 
     with click.progressbar(images) as imgs:
         for path in imgs:
@@ -391,6 +541,7 @@ def join(img, *, config=DEFAULT_CONFIG, out=None, toc=None, ext=(), dpi=None,
                 for item in toc[pageNum]:
                     try:
                         pdf.start_section(item['title'], item['level'])
+                        outline_written = True
                     except Exception as e:
                         pout("toc parse error: {err}".format(err=e),verbose,Level.WARNING)
             try:
@@ -398,5 +549,16 @@ def join(img, *, config=DEFAULT_CONFIG, out=None, toc=None, ext=(), dpi=None,
             except Exception as e:
                 pout(e, verbose, Level.WARNING)
 
+    # resolve page_mode after the loop so the "auto" default can look at
+    # whether an outline was actually written
+    if raw_page_mode is None:
+        page_mode = 'UseOutlines' if outline_written else None
+    else:
+        page_mode, error = pdfName(raw_page_mode, PAGE_MODE_NAMES, 'page_mode')
+        if error:
+            pout(error, verbose, Level.ERROR)
+            return 1
+
     # Write out result
-    return writePdf(pdf, conf['out'], page_layout=page_layout, direction=direction, verbose=verbose)
+    return writePdf(pdf, conf['out'], page_layout=page_layout, direction=direction,
+                    page_mode=page_mode, zoom=zoom, verbose=verbose)
