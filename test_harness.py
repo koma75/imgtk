@@ -388,7 +388,7 @@ class JoinTests(unittest.TestCase):
         self.assertEqual(
             cfg.read_text(),
             "out: output.pdf\ntoc: toc.yml\ndpi: 96\next:\n  - jpg\n  - jpeg\n  - png\n"
-            "page_layout: TwoPageLeft\ndirection: R2L\n",
+            "page_layout: TwoPageRight\ndirection: R2L\n",
             "generated default config does not match the defaults documented in README.md",
         )
         expect_pdf(root, "out.pdf", JOIN_ORDER_DEFAULT, 96, "default config")
@@ -464,8 +464,8 @@ class JoinTests(unittest.TestCase):
         root = scenario("join_catalog", src=FIXTURES / "join")
         rc, out, err = run_cli(["join", "join/srcdir", "-o", "spread.pdf"], cwd=root)
         data = expect_pdf(root, "spread.pdf", JOIN_ORDER_DEFAULT, 96, "catalog defaults")
-        self.assertEqual(pdf_page_layout(data), "TwoPageLeft",
-                         "default /PageLayout is {0}, README documents TwoPageLeft".format(pdf_page_layout(data)))
+        self.assertEqual(pdf_page_layout(data), "TwoPageRight",
+                         "default /PageLayout is {0}, README documents TwoPageRight".format(pdf_page_layout(data)))
         self.assertEqual(pdf_direction(data), "R2L",
                          "default /Direction is {0}, README documents R2L".format(pdf_direction(data)))
 

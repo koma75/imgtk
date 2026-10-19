@@ -82,7 +82,7 @@ def cli():
     type=click.Choice(['SinglePage', 'OneColumn', 'TwoColumnLeft',
                        'TwoColumnRight', 'TwoPageLeft', 'TwoPageRight', 'none'],
                       case_sensitive=False),
-    help='page layout (/PageLayout) in the PDF document catalog: SinglePage, OneColumn, TwoColumnLeft, TwoColumnRight, TwoPageLeft, TwoPageRight, none (default: TwoPageLeft)'
+    help='page layout (/PageLayout) in the PDF document catalog: SinglePage, OneColumn, TwoColumnLeft, TwoColumnRight, TwoPageLeft, TwoPageRight, none (default: TwoPageRight)'
     )
 @click.option(
     '--direction', '-D', default=None,

@@ -46,7 +46,7 @@ DEFAULT_CONFIG = "./imgtk-join.yml"
 DEFAULT_DPI = 96
 DEFAULT_OUT = "output.pdf"
 DEFAULT_TOC = "toc.yml"
-DEFAULT_PAGE_LAYOUT = "TwoPageLeft"
+DEFAULT_PAGE_LAYOUT = "TwoPageRight"
 DEFAULT_DIRECTION = "R2L"
 
 # PDF 32000-2008 Table 3.2 (Document Catalog) -- /PageLayout
@@ -84,7 +84,7 @@ def createConf(conf, verbose):
                 "  - jpg\n",
                 "  - jpeg\n",
                 "  - png\n",
-                "page_layout: TwoPageLeft\n",
+                "page_layout: {0}\n".format(DEFAULT_PAGE_LAYOUT),
                 "direction: R2L\n",
             ])
     except Exception as e:

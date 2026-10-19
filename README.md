@@ -43,7 +43,7 @@ Options:
   -P, --page-layout <layout>  page layout (/PageLayout) in the PDF document
                               catalog: SinglePage, OneColumn, TwoColumnLeft,
                               TwoColumnRight, TwoPageLeft, TwoPageRight, none
-                              (default: TwoPageLeft)
+                              (default: TwoPageRight)
   -D, --direction <dir>       reading order (/Direction) in the PDF viewer
                               preferences: L2R, R2L, none (default: R2L)
   -v, --verbose               output in verbose mode
@@ -72,7 +72,7 @@ Options:
   * page layout (`/PageLayout`) written into the PDF document catalog.
       `<layout>` is one of `SinglePage`, `OneColumn`, `TwoColumnLeft`,
       `TwoColumnRight`, `TwoPageLeft`, `TwoPageRight` or `none`.
-  * default: `TwoPageLeft` (a two-page spread, matching the `R2L` reading order).
+  * default: `TwoPageRight` (a two-page spread, matching the `R2L` reading order).
   * `none` removes the `/PageLayout` entry from the PDF, including the
       `OneColumn` the PDF generator would otherwise write.  Leaving the option
       out entirely is different: it selects the default.  See "PDF viewer
@@ -109,7 +109,7 @@ ext:
   - jpg
   - jpeg
   - png
-page_layout: TwoPageLeft
+page_layout: TwoPageRight
 direction: R2L
 ~~~
 
@@ -122,7 +122,7 @@ configuration file or on the command line (command line wins):
 
 | config key      | command line          | PDF catalog entry              | default       |
 | :--             | :--                 | :--                            | :--           |
-| `page_layout`   | `-P, --page-layout` | `/PageLayout` (Table 3.2)      | `TwoPageLeft` |
+| `page_layout`   | `-P, --page-layout` | `/PageLayout` (Table 3.2)      | `TwoPageRight` |
 | `direction`     | `-D, --direction`   | `/ViewerPreferences /Direction` (Table 3.22) | `R2L` |
 
 Valid `page_layout` values are `SinglePage`, `OneColumn`, `TwoColumnLeft`,
