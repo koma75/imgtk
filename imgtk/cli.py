@@ -91,7 +91,7 @@ def join(img, config, out, toc, ext, dpi, verbose):
 @click.option(
     '--hash-size', '-s', default=8, type=int,
     metavar='<size>',
-    help='hash size to use for image hashing (default: dhash)'
+    help='hash size to use for image hashing (default: 8; accepted but not implemented)'
     )
 @click.option(
     '--hash-func', '-f',
@@ -153,7 +153,7 @@ def dedup(path, hash_size, hash_func, verbose):
 @click.option(
     '--fmt', '-f', default=defaultFmt, type=str,
     metavar='<fmt>',
-    help="Format target directory name using date format strftime string give in <fmt> (default: %Y-%m-%d)."
+    help="Format target directory name using date format strftime string give in <fmt> (default: %Y-%m-%d).  Ignored when --hierarch is specified."
     )
 @click.option(
     '--verbose', '-v', count=True,

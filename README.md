@@ -46,7 +46,10 @@ Options:
 ### Options (join)
 
 * `-c, --config <cfg>`
-  * Configuration File (default: i2p.yml)
+  * Configuration File (default: imgtk-join.yml)
+  * the name is resolved relative to the current working directory.  If the
+      file does not exist, join writes the defaults shown below into it and
+      then reads them back.
 * `-o, --out <out>`
   * output filename for the generated PDF
 * `-t, --toc <toc>`
@@ -66,8 +69,10 @@ Options:
 
 ### Configuration file
 
-YAML based configuration file (default file name: imgtk-join.yaml)
+YAML based configuration file (default file name: imgtk-join.yml)
 is used to store default settings for the tool.
+The name is resolved relative to the current working directory, and the file is
+created with the defaults shown below when it is missing.
 The command line options will take precedence over the configuration parameters.
 
 Following shows the default settings of the configuration
@@ -138,7 +143,8 @@ Options:
                    TGTDIR
   -d, --dry-run    Dry run the command without moving
   -f, --fmt <fmt>  Format target directory name using date format strftime
-                   string give in <fmt> (default: %Y-%m-%d).
+                   string give in <fmt> (default: %Y-%m-%d).  Ignored when
+                   --hierarch is specified.
   -v, --verbose    output in verbose mode
   -h, --help       Show this message and exit.
 ~~~
@@ -148,10 +154,10 @@ Options:
 * `--copy/--move`
   * specify whether the file should be copied or moved.
       Files will be copied if not specified.
-* `-r, --recursive`
-  * search images in SOURCEDIR and any subdirectories.
+* `-r, --recurse`
+  * search images in SRCDIR and any subdirectories.
 * `-o, --overwrite`
-  * overwrite any image files in TARGETDIR
+  * overwrite any image files in TGTDIR
 * `-H, --hierarch`
   * create a folder for year, month and date in a hierarchical manner
       instead of one folder for each date.
@@ -159,7 +165,8 @@ Options:
   * dry run the command.  nothing will be moved
 * `-f, --fmt DATEFORMAT`
   * format the folder name using date format string specified by DATEFORMAT
-  * ignored when "-h" is specified.
+  * ignored when "-H/--hierarch" is specified.  --hierarch always nests the
+      target as %Y/%m/%d regardless of the format string.
 * `-v, --verbose`
   * verbose mode
 
@@ -185,8 +192,8 @@ Usage: imgtk dedup [OPTIONS] PATH
       crop    : crop-resistant hash
 
 Options:
-  -s, --hash-size <size>      hash size to use for image hashing (default:
-                              dhash)
+  -s, --hash-size <size>      hash size to use for image hashing (default: 8;
+                              accepted but not implemented)
   -f, --hash-func <hashfunc>  hash function to use for comparing images
   -v, --verbose               output in verbose mode
   -h, --help                  Show this message and exit.
@@ -198,6 +205,10 @@ Options:
   * PATH with the images to check for (will not be recursed)
 * `-s, --hash-size SIZE`
   * specify the hash size to use. (Default: 8)
+  * NOT IMPLEMENTED: the value is only range-checked and is never passed to the
+      hash functions, so every hash function runs at its own built-in default
+      size and the option does not change which images are grouped.
+      See Known Issues.
 * `-f, --hash-func`
   * ahash
     * Use Average hash to find duplicates in PATH
@@ -221,7 +232,20 @@ same folder with tha hash value as the folder name.
 
 ## Known Issues
 
-* No known issues at time of release.
+* `dedup --hash-size/-s` is accepted but not implemented.  The value is only
+  range-checked ("Hash size must be a positive integer"); it is never forwarded
+  to the hashing helpers, so every hash function runs at imagehash's built-in
+  default size (8) and `-s 4` selects exactly the same duplicate groups as
+  `-s 8`.  Marked with a `TODO:` in `imgtk/deduplicate/deduplicate.py`.
+* `dedup` decides which files are images by name only.  As well as the
+  documented extensions, any file whose name merely contains `.jpg` (for
+  example `scan.jpg.bak`) is hashed and reports an unreadable-image error, and
+  `.svg` is listed but Pillow cannot decode it without the SVG plugin.
+  Unreadable files are reported and skipped; the run still succeeds.
+* `sort`'s image filter lists `heic` without a leading dot, so any file whose
+  name ends in `heic` (`notes-heic`, `archive-scheme`-style names) is treated as
+  an image and moved/copied using its file date.  Genuine `.heic` files also
+  need Pillow's HEIF/HEIC plugin to be readable.
 * See github issues for latest issues.
 
 ## Development
@@ -265,7 +289,7 @@ minor/patch versions until we deploy the tool to production
 (and reach 1.0.0).
 The interface relevant to versioning is whatever defined in this
 document's "Usage" section (includes all (sub)commands, their cli arguments,
-and the format of the configuration file "imgtk.yaml").
+and the format of the configuration file "imgtk-join.yml").
 
 ## Version History
 

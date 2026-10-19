@@ -55,6 +55,12 @@ HASH_FUNCS = {
 
 
 def compute_hash(path, hashfunc, verbose):
+    # TODO: --hash-size is accepted on the command line but is not implemented:
+    # hash_size is never forwarded here, so every hash function runs at its own
+    # built-in default size (8).  Thread a hash_size argument through this
+    # helper and bind it per function before wiring it up (colorhash() takes no
+    # hash_size, and crop_resistant_hash() needs hash_func=partial(dhash,
+    # hash_size=<size>)).
     try:
         return f"{hashfunc(Image.open(path))}", path
     except Exception as e:
@@ -88,6 +94,9 @@ def find_dup(path, *, hashfunc=imagehash.dhash, hash_size=8, verbose=0):
 
     # 1. Now parse arguments
 
+    # TODO: hash_size is only range-checked and then dropped; it is not applied
+    # to the hashing (see compute_hash).  README documents --hash-size as
+    # "not implemented" and lists it under Known Issues.
     if hash_size < 1:
         pout(f"Hash size must be a positive integer [{hash_size}]", verbose, Level.ERROR)
         return 1
