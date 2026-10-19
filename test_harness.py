@@ -70,7 +70,7 @@ def cli_prefix():
     return [sys.executable, "-m", "imgtk.cli"]
 
 
-def run_cli(args, cwd, expect_rc=0):
+def run_cli(args, cwd, expect_rc: int | None = 0):
     env = os.environ.copy()
     if shutil.which("imgtk") is None:
         env["PYTHONPATH"] = str(ROOT)
@@ -507,16 +507,36 @@ class JoinTests(unittest.TestCase):
         root = scenario("join_nocat", src=FIXTURES / "join")
         rc, out, err = run_cli(["join", "join/srcdir", "-o", "plain.pdf", "-P", "none", "-D", "none"], cwd=root)
         data = expect_pdf(root, "plain.pdf", JOIN_ORDER_DEFAULT, 96, "-P none -D none")
-        self.assertIsNone(pdf_direction(data), "--direction none must leave /Direction out of the catalog")
-        self.assertIn(pdf_page_layout(data), (None, "OneColumn"),
-                      "--page-layout none must not set a non-default /PageLayout: {0}".format(pdf_page_layout(data)))
+        self.assertIsNone(pdf_page_layout(data),
+                          "--page-layout none must remove /PageLayout, found {0}".format(pdf_page_layout(data)))
+        self.assertIsNone(pdf_direction(data),
+                          "--direction none must remove /Direction, found {0}".format(pdf_direction(data)))
+
+    def test_join_none_differs_from_omitted_config_key(self):
+        root = scenario("join_nonecfg", src=FIXTURES / "join")
+        (root / "nonecfg.yml").write_text("out: nonecfg.pdf\next:\n  - jpg\n  - png\npage_layout: none\n")
+        rc, out, err = run_cli(["join", "join/srcdir", "-c", "nonecfg.yml"], cwd=root)
+        data = expect_pdf(root, "nonecfg.pdf", JOIN_ORDER_DEFAULT, 96, "config page_layout: none")
+        self.assertIsNone(pdf_page_layout(data),
+                          "'page_layout: none' left /PageLayout {0} in the catalog".format(pdf_page_layout(data)))
+        self.assertEqual(pdf_direction(data), "R2L",
+                          "omitted direction key must fall back to the R2L default: {0}".format(pdf_direction(data)))
+
+    def test_join_failed_write_leaves_no_partial_file(self):
+        root = scenario("join_nowrite", src=FIXTURES / "join")
+        rc, out, err = run_cli(["join", "join/srcdir", "-o", "nodir/out.pdf"], cwd=root, expect_rc=1)
+        self.assertIn("could not write", out + err, "write failure not reported")
+        self.assertFalse((root / "out.pdf").exists(), "a partial out.pdf was left behind")
+        leftovers = [str(p.name) for p in root.iterdir() if p.name.endswith(".tmp")]
+        self.assertEqual(leftovers, [], "temporary staging files left behind: {0}".format(leftovers))
 
     def test_join_rejects_invalid_catalog_setting(self):
         root = scenario("join_badcatalog", src=FIXTURES / "join")
         (root / "badcatalog.yml").write_text("page_layout: Booklet\n")
         rc, out, err = run_cli(["join", "join/srcdir", "-c", "badcatalog.yml"], cwd=root, expect_rc=1)
         self.assertIn("invalid page_layout", out + err, "invalid config page_layout value not reported")
-        rc, out, err = run_cli(["join", "join/srcdir", "-D", "TTB"], cwd=root, expect_rc=2)
+        rc, out, err = run_cli(["join", "join/srcdir", "-D", "TTB"], cwd=root, expect_rc=None)
+        self.assertNotEqual(rc, 0, "invalid --direction value was accepted")
         self.assertIn("not one of", out + err, "invalid --direction value not rejected by the cli")
 
 

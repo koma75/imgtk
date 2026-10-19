@@ -37,6 +37,26 @@ Console logging helpers shared by all imgtk subcommands.
 from enum import IntEnum
 
 import click
+import re
+
+
+CONTROL_CHARACTERS = re.compile(r'[\x00-\x08\x0b-\x1f\x7f\x80-\x9f]')
+
+
+def sanitize(msg):
+    """Strip control characters from a message before it reaches the terminal.
+
+    Configuration-derived strings (filenames, option values read from yaml) are
+    echoed to the terminal, and unescaped control characters in them could
+    otherwise write escape sequences to the console.
+
+    Args:
+        msg (string): message to clean up
+    Returns:
+        string -- message with newline and tab preserved, other control
+              characters removed
+    """
+    return CONTROL_CHARACTERS.sub('', str(msg))
 
 
 class Level(IntEnum):
@@ -82,4 +102,4 @@ def pout(msg=None, Verbose=0, level=Level.INFO, newline=True):
         error=True
     else:
         fg = 'white'
-    click.echo(click.style(str(msg), fg=fg), nl=newline, err=error)
+    click.echo(click.style(sanitize(msg), fg=fg), nl=newline, err=error)

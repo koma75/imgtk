@@ -73,15 +73,18 @@ Options:
       `<layout>` is one of `SinglePage`, `OneColumn`, `TwoColumnLeft`,
       `TwoColumnRight`, `TwoPageLeft`, `TwoPageRight` or `none`.
   * default: `TwoPageLeft` (a two-page spread, matching the `R2L` reading order).
-  * `none` leaves the entry out of the catalog, leaving the PDF default
-      (`OneColumn`, which fpdf2 writes as its own default).
+  * `none` removes the `/PageLayout` entry from the PDF, including the
+      `OneColumn` the PDF generator would otherwise write.  Leaving the option
+      out entirely is different: it selects the default.  See "PDF viewer
+      defaults (document catalog)".
 * `-D, --direction <dir>`
   * predominant reading order (`/Direction`) written into the
       `ViewerPreferences` dictionary of the PDF document catalog.
       `<dir>` is one of `L2R`, `R2L` or `none`.
   * default: `R2L` (right to left), which makes viewers such as Acrobat
       open the document as a right-to-left book.
-  * `none` leaves `/Direction` out, so the PDF default (`L2R`) applies.
+  * `none` removes `/Direction` from the PDF, letting the PDF default
+      (`L2R`) apply.  Leaving the option out selects the default instead.
 * `-v, --verbose`
   * output in verbose mode
   * specify twice to get debug messages
@@ -125,14 +128,31 @@ configuration file or on the command line (command line wins):
 Valid `page_layout` values are `SinglePage`, `OneColumn`, `TwoColumnLeft`,
 `TwoColumnRight`, `TwoPageLeft` and `TwoPageRight`; the two `TwoPage*` values
 raise the generated file to PDF 1.5 as the specification requires.
-Valid `direction` values are `L2R` and `R2L`.  The values are matched
-case-insensitively in the configuration file, so `page_layout: twopageleft` and
-`page_layout: TwoPageLeft` are the same.  Use `none` for either key to leave the
-entry out of the catalog.
+Valid `direction` values are `L2R` and `R2L`.
 
-A bad value in the configuration file is reported and makes `join` exit
-unsuccessfully; an invalid value on the command line is rejected by the option
-parser before anything is written.
+Each key has three states, and they are not all the same thing:
+
+* **omitted** from the configuration file and not given on the command line:
+    the tool default shown in the table above is written to the PDF.
+* **set to a value**: that value is written to the PDF.  Command-line values
+    win over the configuration file.
+* **`none`** (configuration file or command line): the entry is *removed* from
+    the PDF, which is not the same as leaving it out of the configuration file.
+    `/PageLayout` in particular is removed, overriding the `OneColumn` that the
+    PDF generator would otherwise write.
+
+Configuration values are matched case-insensitively and the separators `-`,
+`_` and spaces are ignored, so `page_layout: two page left`,
+`page_layout: two_page_left` and `page_layout: TwoPageLeft` all mean the same.
+A bad configuration value is reported and makes `join` exit unsuccessfully; an
+invalid command-line value is rejected by the option parser before any file is
+written.
+
+The PDF is written by pikepdf into a temporary file next to the target and then
+renamed into place, so a failing run never leaves a half-written PDF behind, and
+the temporary files are always cleaned up.  Because pikepdf (qpdf) re-serializes
+the document, the generated file is not byte-identical to what the PDF
+generator alone would produce.
 
 These catalog entries are applied with pikepdf, so pikepdf is a runtime
 dependency of `join`.

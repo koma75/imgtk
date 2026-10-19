@@ -30,7 +30,7 @@ import yaml
 import os
 import glob
 import re
-import io
+import tempfile
 from pprint import pformat
 import click
 from fpdf import FPDF
@@ -127,60 +127,120 @@ def pdfName(value, names, key):
     return names[token], None
 
 
-def writePdf(pdf, out, page_layout=None, direction=None, verbose=0):
+def temp_out(out, workdir):
+    """Create a temporary file in the same directory as out.
+
+    Keeping the temporary files next to the target means they are on the same
+    filesystem, so the final os.replace() is atomic, and it means the target
+    is never seen half written.
+
+    Args:
+        out (string): target PDF filename
+        workdir (string): directory the temporary file should live in
+    Returns:
+        string -- path of the created (and closed) temporary file
+    """
+    fd, staged = tempfile.mkstemp(
+        dir=workdir,
+        prefix="{0}.".format(os.path.basename(out)),
+        suffix=".tmp")
+    os.close(fd)
+    return staged
+
+
+def remove_tmp(paths, verbose=0):
+    """Remove temporary files, reporting but ignoring failures.
+
+    Args:
+        paths (sequence): temporary file paths to remove (None entries skipped)
+        verbose (int): verbosity level
+    """
+    for path in paths:
+        if not path:
+            continue
+        try:
+            os.remove(path)
+        except OSError as e:
+            pout("could not remove temporary file {file}: {error}".format(file=path, error=e),
+                 verbose, Level.DEBUG)
+
+
+def writePdf(pdf, out, page_layout: str | None = DEFAULT_PAGE_LAYOUT,
+             direction: str | None = DEFAULT_DIRECTION, verbose=0):
     """Write out the generated PDF, setting document catalog viewer defaults.
 
-    PageLayout and ViewerPreferences /Direction are written into the document
-    catalog with pikepdf so the values are the names required by PDF 32000-2008
-    (Table 3.2 /Table 3.22).  A direct (inline) dictionary is used for
-    /ViewerPreferences as the specification requires.
+    The document is composed by fpdf into a temporary file, reopened with
+    pikepdf, and the catalog entries are then set or deleted with the name
+    values required by PDF 32000-2008 (Table 3.2 for /PageLayout, Table 3.22
+    for ViewerPreferences /Direction): fpdf alone would write the invalid
+    "/Direction RTL" name.  The result is staged in a second temporary file and
+    renamed into place, so a failed run never leaves a partial PDF behind.
 
     Args:
         pdf (FPDF): the composed document
         out (string): output PDF filename
-        page_layout (string): PDF /PageLayout name, None to leave unset
-        direction (string): ViewerPreferences /Direction name, None to leave unset
+        page_layout (string|None): PDF /PageLayout name, None removes the entry
+        direction (string|None): ViewerPreferences /Direction name, None removes it
         verbose (int): verbosity level
     Returns:
         int -- process exit code (0 on success, non-zero on hard failure)
     """
     if page_layout is None:
-        pout('PageLayout will not be set (PDF default: OneColumn)', verbose, Level.WARNING)
+        pout('PageLayout is removed from the document catalog', verbose, Level.WARNING)
     if direction is None:
-        pout('ViewerPreferences Direction will not be set (PDF default: L2R)', verbose, Level.WARNING)
-
-    if page_layout is None and direction is None:
-        # nothing to add to the catalog, let fpdf write the file out directly
-        try:
-            pdf.output(out)
-            return 0
-        except Exception as e:
-            pout(e, verbose, Level.ERROR)
-            return 1
-
+        pout('ViewerPreferences Direction is removed from the document catalog', verbose, Level.WARNING)
     pout("document catalog: PageLayout={page_layout}, Direction={direction}".format(
         page_layout=page_layout, direction=direction), verbose, Level.DEBUG)
+
+    staged = None
+    result = None
     try:
-        composed = Pdf.open(io.BytesIO(pdf.output()))
-        catalog = composed.Root
-        if page_layout:
-            catalog.PageLayout = Name("/{0}".format(page_layout))
-        if direction:
-            if '/ViewerPreferences' in catalog and catalog.ViewerPreferences.is_dictionary:
-                catalog.ViewerPreferences.Direction = Name("/{0}".format(direction))
-            else:
-                catalog.ViewerPreferences = Dictionary(Direction=Name("/{0}".format(direction)))
-        # /TwoPageLeft and /TwoPageRight are only defined for PDF 1.5 and later
-        composed.save(
-            out,
-            min_version='1.5' if page_layout in ('TwoPageLeft', 'TwoPageRight') else '',
-            object_stream_mode=ObjectStreamMode.preserve,
-            compress_streams=False)
+        workdir = os.path.dirname(out) or '.'
+        staged = temp_out(out, workdir)
+        result = temp_out(out, workdir)
+
+        pdf.output(staged)
+        with Pdf.open(staged) as composed:
+            warnings = composed.get_warnings()
+            if warnings:
+                pout("pikepdf warnings while reading the composed PDF: {warn}".format(
+                    warn="; ".join(str(w) for w in warnings)), verbose, Level.WARNING)
+
+            catalog = composed.Root
+            if page_layout:
+                catalog.PageLayout = Name("/{0}".format(page_layout))
+            elif '/PageLayout' in catalog:
+                del catalog['/PageLayout']
+
+            if direction:
+                if '/ViewerPreferences' in catalog and catalog.ViewerPreferences.is_dictionary:
+                    catalog.ViewerPreferences.Direction = Name("/{0}".format(direction))
+                else:
+                    catalog.ViewerPreferences = Dictionary(Direction=Name("/{0}".format(direction)))
+            elif '/ViewerPreferences' in catalog and catalog.ViewerPreferences.is_dictionary:
+                viewer_prefs = catalog.ViewerPreferences
+                if '/Direction' in viewer_prefs:
+                    del viewer_prefs['/Direction']
+                if len(viewer_prefs) == 0:
+                    del catalog['/ViewerPreferences']
+
+            # /TwoPageLeft and /TwoPageRight are only defined for PDF 1.5 and later
+            composed.save(
+                result,
+                min_version='1.5' if page_layout in ('TwoPageLeft', 'TwoPageRight') else '',
+                object_stream_mode=ObjectStreamMode.preserve,
+                compress_streams=False)
+
+        # same directory as out, so this rename is atomic
+        os.replace(result, out)
+        result = None
         return 0
     except Exception as e:
         pout("could not write {file}: {error}".format(file=out, error=e), verbose, Level.ERROR)
         pout("{error}".format(error=e), verbose, Level.DEBUG)
         return 1
+    finally:
+        remove_tmp((staged, result), verbose)
 
 
 def join(img, *, config=DEFAULT_CONFIG, out=None, toc=None, ext=(), dpi=None,
@@ -196,8 +256,8 @@ def join(img, *, config=DEFAULT_CONFIG, out=None, toc=None, ext=(), dpi=None,
         toc (string) -- TOC file used to populate the PDF outline
         ext (sequence) -- file extensions to pick up inside directories
         dpi (int) -- pixel density of the input images
-        page_layout (string) -- /PageLayout name for the document catalog ('none' to omit)
-        direction (string) -- ViewerPreferences /Direction name, 'L2R' or 'R2L' ('none' to omit)
+        page_layout (string) -- /PageLayout name for the document catalog, 'none' removes the entry
+        direction (string) -- ViewerPreferences /Direction name 'L2R' or 'R2L', 'none' removes the entry
         verbose (int) -- verbosity level
     Returns:
         int -- process exit code (0 on success, non-zero on hard failure)
