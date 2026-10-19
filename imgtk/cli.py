@@ -77,12 +77,27 @@ def cli():
     help='pixel density of input image in dpi'
     )
 @click.option(
+    '--page-layout', '-P', default=None,
+    metavar='<layout>',
+    type=click.Choice(['SinglePage', 'OneColumn', 'TwoColumnLeft',
+                       'TwoColumnRight', 'TwoPageLeft', 'TwoPageRight', 'none'],
+                      case_sensitive=False),
+    help='page layout (/PageLayout) in the PDF document catalog: SinglePage, OneColumn, TwoColumnLeft, TwoColumnRight, TwoPageLeft, TwoPageRight, none (default: TwoPageLeft)'
+    )
+@click.option(
+    '--direction', '-D', default=None,
+    metavar='<dir>',
+    type=click.Choice(['L2R', 'R2L', 'none'], case_sensitive=False),
+    help='reading order (/Direction) in the PDF viewer preferences: L2R, R2L, none (default: R2L)'
+    )
+@click.option(
     '--verbose', '-v', count=True,
     help='output in verbose mode'
     )
-def join(img, config, out, toc, ext, dpi, verbose):
+def join(img, config, out, toc, ext, dpi, page_layout, direction, verbose):
     """Join images into one PDF file"""
-    rc = i2p_join(img, config=config, out=out, toc=toc, ext=ext, dpi=dpi, verbose=verbose)
+    rc = i2p_join(img, config=config, out=out, toc=toc, ext=ext, dpi=dpi,
+                  page_layout=page_layout, direction=direction, verbose=verbose)
     if rc:
         raise SystemExit(rc, "Failed to join images into PDF")
 

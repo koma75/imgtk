@@ -34,13 +34,20 @@ Usage: imgtk join [OPTIONS] [IMG]...
   Join images into one PDF file
 
 Options:
-  -c, --config <cfg>  Configuration File (default: imgtk-join.yml)
-  -o, --out <out>     output filename for the generated PDF
-  -t, --toc <toc>     toc file to populate PDF outline
-  -e, --ext <ext>     file extensions to pick up when parsing directories
-  -d, --dpi <dpi>     pixel density of input image in dpi
-  -v, --verbose       output in verbose mode
-  -h, --help          Show this message and exit.
+  -c, --config <cfg>          Configuration File (default: imgtk-join.yml)
+  -o, --out <out>             output filename for the generated PDF
+  -t, --toc <toc>             toc file to populate PDF outline
+  -e, --ext <ext>             file extensions to pick up when parsing
+                              directories
+  -d, --dpi <dpi>             pixel density of input image in dpi
+  -P, --page-layout <layout>  page layout (/PageLayout) in the PDF document
+                              catalog: SinglePage, OneColumn, TwoColumnLeft,
+                              TwoColumnRight, TwoPageLeft, TwoPageRight, none
+                              (default: TwoPageLeft)
+  -D, --direction <dir>       reading order (/Direction) in the PDF viewer
+                              preferences: L2R, R2L, none (default: R2L)
+  -v, --verbose               output in verbose mode
+  -h, --help                  Show this message and exit.
 ~~~
 
 ### Options (join)
@@ -61,6 +68,20 @@ Options:
 * `-d, --dpi <dpi>`
   * pixel density of input image in dpi.  used to calculate image width and
       height in mm.
+* `-P, --page-layout <layout>`
+  * page layout (`/PageLayout`) written into the PDF document catalog.
+      `<layout>` is one of `SinglePage`, `OneColumn`, `TwoColumnLeft`,
+      `TwoColumnRight`, `TwoPageLeft`, `TwoPageRight` or `none`.
+  * default: `TwoPageLeft` (a two-page spread, matching the `R2L` reading order).
+  * `none` leaves the entry out of the catalog, leaving the PDF default
+      (`OneColumn`, which fpdf2 writes as its own default).
+* `-D, --direction <dir>`
+  * predominant reading order (`/Direction`) written into the
+      `ViewerPreferences` dictionary of the PDF document catalog.
+      `<dir>` is one of `L2R`, `R2L` or `none`.
+  * default: `R2L` (right to left), which makes viewers such as Acrobat
+      open the document as a right-to-left book.
+  * `none` leaves `/Direction` out, so the PDF default (`L2R`) applies.
 * `-v, --verbose`
   * output in verbose mode
   * specify twice to get debug messages
@@ -85,7 +106,36 @@ ext:
   - jpg
   - jpeg
   - png
+page_layout: TwoPageLeft
+direction: R2L
 ~~~
+
+### PDF viewer defaults (document catalog)
+
+`join` writes two entries into the PDF document catalog so viewers such as
+Adobe Acrobat open the generated book the way the scanned pages are meant to be
+read.  Both keys follow the PDF 32000-2008 specification and can be set in the
+configuration file or on the command line (command line wins):
+
+| config key      | command line          | PDF catalog entry              | default       |
+| :--             | :--                 | :--                            | :--           |
+| `page_layout`   | `-P, --page-layout` | `/PageLayout` (Table 3.2)      | `TwoPageLeft` |
+| `direction`     | `-D, --direction`   | `/ViewerPreferences /Direction` (Table 3.22) | `R2L` |
+
+Valid `page_layout` values are `SinglePage`, `OneColumn`, `TwoColumnLeft`,
+`TwoColumnRight`, `TwoPageLeft` and `TwoPageRight`; the two `TwoPage*` values
+raise the generated file to PDF 1.5 as the specification requires.
+Valid `direction` values are `L2R` and `R2L`.  The values are matched
+case-insensitively in the configuration file, so `page_layout: twopageleft` and
+`page_layout: TwoPageLeft` are the same.  Use `none` for either key to leave the
+entry out of the catalog.
+
+A bad value in the configuration file is reported and makes `join` exit
+unsuccessfully; an invalid value on the command line is rejected by the option
+parser before anything is written.
+
+These catalog entries are applied with pikepdf, so pikepdf is a runtime
+dependency of `join`.
 
 ### TOC File (default name: toc.yml)
 

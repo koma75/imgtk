@@ -297,6 +297,29 @@ def pdf_outlines(data):
     return out
 
 
+def pdf_catalog(data):
+    objs = pdf_objects(data)
+    for body in objs.values():
+        if re.search(rb"/Type\s*/Catalog\b", body):
+            return body
+    raise AssertionError("PDF has no /Type /Catalog object")
+
+
+def pdf_page_layout(data):
+    """/PageLayout name in the document catalog (PDF32000 Table 3.2), or None."""
+    m = re.search(rb"/PageLayout\s*/([A-Za-z]+)", pdf_catalog(data))
+    return m.group(1).decode() if m else None
+
+
+def pdf_direction(data):
+    """/Direction name in the catalog ViewerPreferences (PDF32000 Table 3.22), or None."""
+    prefs = re.search(rb"/ViewerPreferences\s*<<(.*?)>>", pdf_catalog(data), re.S)
+    if prefs is None:
+        return None
+    direction = re.search(rb"/Direction\s*/([A-Za-z0-9]+)", prefs.group(1))
+    return direction.group(1).decode() if direction else None
+
+
 def pdf_check(data):
     if not data.startswith(b"%PDF-"):
         raise AssertionError("output is not a PDF (missing %PDF- header)")
@@ -364,7 +387,8 @@ class JoinTests(unittest.TestCase):
         self.assertTrue(cfg.exists(), "join did not create ./imgtk-join.yml when no config existed")
         self.assertEqual(
             cfg.read_text(),
-            "out: output.pdf\ntoc: toc.yml\ndpi: 96\next:\n  - jpg\n  - jpeg\n  - png\n",
+            "out: output.pdf\ntoc: toc.yml\ndpi: 96\next:\n  - jpg\n  - jpeg\n  - png\n"
+            "page_layout: TwoPageLeft\ndirection: R2L\n",
             "generated default config does not match the defaults documented in README.md",
         )
         expect_pdf(root, "out.pdf", JOIN_ORDER_DEFAULT, 96, "default config")
@@ -435,6 +459,65 @@ class JoinTests(unittest.TestCase):
         self.assertEqual(rc, 0, "join should survive unreadable entries in the directory")
         data = expect_pdf(root, "txt.pdf", JOIN_ORDER_DEFAULT, 96, "txt entry skipped")
         self.assertEqual(len(pdf_pages(data)), 3, "notes.txt must never become a PDF page")
+
+    def test_join_catalog_viewer_defaults_documented(self):
+        root = scenario("join_catalog", src=FIXTURES / "join")
+        rc, out, err = run_cli(["join", "join/srcdir", "-o", "spread.pdf"], cwd=root)
+        data = expect_pdf(root, "spread.pdf", JOIN_ORDER_DEFAULT, 96, "catalog defaults")
+        self.assertEqual(pdf_page_layout(data), "TwoPageLeft",
+                         "default /PageLayout is {0}, README documents TwoPageLeft".format(pdf_page_layout(data)))
+        self.assertEqual(pdf_direction(data), "R2L",
+                         "default /Direction is {0}, README documents R2L".format(pdf_direction(data)))
+
+    def test_join_page_layout_option(self):
+        root = scenario("join_layout", src=FIXTURES / "join")
+        rc, out, err = run_cli(["join", "join/srcdir", "-o", "single.pdf", "--page-layout", "SinglePage"], cwd=root)
+        data = expect_pdf(root, "single.pdf", JOIN_ORDER_DEFAULT, 96, "--page-layout SinglePage")
+        self.assertEqual(pdf_page_layout(data), "SinglePage",
+                         "--page-layout SinglePage produced /PageLayout {0}".format(pdf_page_layout(data)))
+        run_cli(["join", "join/srcdir", "-o", "twocol.pdf", "-P", "TwoColumnRight"], cwd=root)
+        data = expect_pdf(root, "twocol.pdf", JOIN_ORDER_DEFAULT, 96, "-P TwoColumnRight")
+        self.assertEqual(pdf_page_layout(data), "TwoColumnRight",
+                         "-P TwoColumnRight produced /PageLayout {0}".format(pdf_page_layout(data)))
+        run_cli(["join", "join/srcdir", "-o", "l2r.pdf", "-D", "L2R"], cwd=root)
+        data = expect_pdf(root, "l2r.pdf", JOIN_ORDER_DEFAULT, 96, "-D L2R")
+        self.assertEqual(pdf_direction(data), "L2R",
+                         "-D L2R produced /Direction {0}".format(pdf_direction(data)))
+
+    def test_join_catalog_keys_from_config(self):
+        root = scenario("join_catalogcfg", src=FIXTURES / "join")
+        (root / "catalog.yml").write_text(
+            "out: cfgcatalog.pdf\npage_layout: twocolumnleft\ndirection: l2r\n"
+            "ext:\n  - jpg\n  - png\n")
+        rc, out, err = run_cli(["join", "join/srcdir", "-c", "catalog.yml"], cwd=root)
+        data = expect_pdf(root, "cfgcatalog.pdf", JOIN_ORDER_DEFAULT, 96, "config page_layout/direction keys")
+        self.assertEqual(pdf_page_layout(data), "TwoColumnLeft",
+                         "config 'page_layout: twocolumnleft' produced /PageLayout {0}".format(pdf_page_layout(data)))
+        self.assertEqual(pdf_direction(data), "L2R",
+                         "config 'direction: l2r' produced /Direction {0}".format(pdf_direction(data)))
+        # command line takes precedence over the configuration file
+        rc, out, err = run_cli(["join", "join/srcdir", "-c", "catalog.yml", "-D", "R2L", "-o", "cfgcli.pdf"], cwd=root)
+        data = expect_pdf(root, "cfgcli.pdf", JOIN_ORDER_DEFAULT, 96, "cli -D overrides config direction")
+        self.assertEqual(pdf_direction(data), "R2L",
+                         "cli --direction did not override the config value: {0}".format(pdf_direction(data)))
+        self.assertEqual(pdf_page_layout(data), "TwoColumnLeft",
+                         "config page_layout was dropped when only --direction was given")
+
+    def test_join_catalog_entries_can_be_disabled(self):
+        root = scenario("join_nocat", src=FIXTURES / "join")
+        rc, out, err = run_cli(["join", "join/srcdir", "-o", "plain.pdf", "-P", "none", "-D", "none"], cwd=root)
+        data = expect_pdf(root, "plain.pdf", JOIN_ORDER_DEFAULT, 96, "-P none -D none")
+        self.assertIsNone(pdf_direction(data), "--direction none must leave /Direction out of the catalog")
+        self.assertIn(pdf_page_layout(data), (None, "OneColumn"),
+                      "--page-layout none must not set a non-default /PageLayout: {0}".format(pdf_page_layout(data)))
+
+    def test_join_rejects_invalid_catalog_setting(self):
+        root = scenario("join_badcatalog", src=FIXTURES / "join")
+        (root / "badcatalog.yml").write_text("page_layout: Booklet\n")
+        rc, out, err = run_cli(["join", "join/srcdir", "-c", "badcatalog.yml"], cwd=root, expect_rc=1)
+        self.assertIn("invalid page_layout", out + err, "invalid config page_layout value not reported")
+        rc, out, err = run_cli(["join", "join/srcdir", "-D", "TTB"], cwd=root, expect_rc=2)
+        self.assertIn("not one of", out + err, "invalid --direction value not rejected by the cli")
 
 
 # ================================================================ sort tests
@@ -751,7 +834,9 @@ OPTION_CLAIMS = {
     "join": {
         "usage": "imgtk join [OPTIONS] [IMG]...",
         "options": ["-c, --config <cfg>", "-o, --out <out>", "-t, --toc <toc>",
-                    "-e, --ext <ext>", "-d, --dpi <dpi>", "-v, --verbose", "-h, --help"],
+                    "-e, --ext <ext>", "-d, --dpi <dpi>",
+                    "-P, --page-layout <layout>", "-D, --direction <dir>",
+                    "-v, --verbose", "-h, --help"],
     },
     "sort": {
         "usage": "imgtk sort [OPTIONS] SRCDIR TGTDIR",

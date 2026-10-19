@@ -35,6 +35,7 @@ dependencies = [
     'pillow>=12.2,<13',
     'imagehash>=4.3,<5',
     'fpdf2>=2.6,<3',
+    'pikepdf>=10,<11',
     'tqdm>=4.67,<5',
 ]
 dynamic = ["version"]

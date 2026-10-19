@@ -30,10 +30,14 @@ import yaml
 import os
 import glob
 import re
+import io
 from pprint import pformat
 import click
 from fpdf import FPDF
 from PIL import Image
+# Document catalog settings (PageLayout / ViewerPreferences) are written with
+# pikepdf, which emits the name values required by the PDF specification.
+from pikepdf import Pdf, Dictionary, Name, ObjectStreamMode
 
 from .._logging import Level, pout
 
@@ -42,6 +46,25 @@ DEFAULT_CONFIG = "./imgtk-join.yml"
 DEFAULT_DPI = 96
 DEFAULT_OUT = "output.pdf"
 DEFAULT_TOC = "toc.yml"
+DEFAULT_PAGE_LAYOUT = "TwoPageLeft"
+DEFAULT_DIRECTION = "R2L"
+
+# PDF 32000-2008 Table 3.2 (Document Catalog) -- /PageLayout
+PAGE_LAYOUT_NAMES = {
+    'singlepage': 'SinglePage',
+    'onecolumn': 'OneColumn',
+    'twocolumnleft': 'TwoColumnLeft',
+    'twocolumnright': 'TwoColumnRight',
+    'twopageleft': 'TwoPageLeft',
+    'twopageright': 'TwoPageRight',
+    'none': None,
+}
+# PDF 32000-2008 Table 3.22 (Viewer Preferences) -- /Direction
+DIRECTION_NAMES = {
+    'l2r': 'L2R',
+    'r2l': 'R2L',
+    'none': None,
+}
 
 
 def createConf(conf, verbose):
@@ -61,6 +84,8 @@ def createConf(conf, verbose):
                 "  - jpg\n",
                 "  - jpeg\n",
                 "  - png\n",
+                "page_layout: TwoPageLeft\n",
+                "direction: R2L\n",
             ])
     except Exception as e:
         pout("could not create {file}: {err}".format(file=conf, err=e), verbose, Level.ERROR)
@@ -78,7 +103,88 @@ def numericalSort(value):
     return parts
 
 
-def join(img, *, config=DEFAULT_CONFIG, out=None, toc=None, ext=(), dpi=None, verbose=0):
+def pdfName(value, names, key):
+    """Resolve a document catalog setting to its PDF name.
+
+    The lookup is case insensitive and ignores '-', '_' and spaces so the
+    values in the yaml configuration file need not be typed exactly as the
+    PDF specification spells them.
+
+    Args:
+        value (string): value read from the configuration or command line
+        names (dict): mapping of normalized value to PDF name
+        key (string): configuration key name used for the error message
+    Returns:
+        tuple (string|None, string|None): resolved PDF name and error message
+              name is None when the setting is turned off ('none')
+    """
+    if value is None:
+        return None, None
+    token = re.sub(r'[-_ ]', '', str(value)).lower()
+    if token not in names:
+        return None, "invalid {key}: {value} (expected one of {allowed})".format(
+            key=key, value=value, allowed=", ".join(sorted(names)))
+    return names[token], None
+
+
+def writePdf(pdf, out, page_layout=None, direction=None, verbose=0):
+    """Write out the generated PDF, setting document catalog viewer defaults.
+
+    PageLayout and ViewerPreferences /Direction are written into the document
+    catalog with pikepdf so the values are the names required by PDF 32000-2008
+    (Table 3.2 /Table 3.22).  A direct (inline) dictionary is used for
+    /ViewerPreferences as the specification requires.
+
+    Args:
+        pdf (FPDF): the composed document
+        out (string): output PDF filename
+        page_layout (string): PDF /PageLayout name, None to leave unset
+        direction (string): ViewerPreferences /Direction name, None to leave unset
+        verbose (int): verbosity level
+    Returns:
+        int -- process exit code (0 on success, non-zero on hard failure)
+    """
+    if page_layout is None:
+        pout('PageLayout will not be set (PDF default: OneColumn)', verbose, Level.WARNING)
+    if direction is None:
+        pout('ViewerPreferences Direction will not be set (PDF default: L2R)', verbose, Level.WARNING)
+
+    if page_layout is None and direction is None:
+        # nothing to add to the catalog, let fpdf write the file out directly
+        try:
+            pdf.output(out)
+            return 0
+        except Exception as e:
+            pout(e, verbose, Level.ERROR)
+            return 1
+
+    pout("document catalog: PageLayout={page_layout}, Direction={direction}".format(
+        page_layout=page_layout, direction=direction), verbose, Level.DEBUG)
+    try:
+        composed = Pdf.open(io.BytesIO(pdf.output()))
+        catalog = composed.Root
+        if page_layout:
+            catalog.PageLayout = Name("/{0}".format(page_layout))
+        if direction:
+            if '/ViewerPreferences' in catalog and catalog.ViewerPreferences.is_dictionary:
+                catalog.ViewerPreferences.Direction = Name("/{0}".format(direction))
+            else:
+                catalog.ViewerPreferences = Dictionary(Direction=Name("/{0}".format(direction)))
+        # /TwoPageLeft and /TwoPageRight are only defined for PDF 1.5 and later
+        composed.save(
+            out,
+            min_version='1.5' if page_layout in ('TwoPageLeft', 'TwoPageRight') else '',
+            object_stream_mode=ObjectStreamMode.preserve,
+            compress_streams=False)
+        return 0
+    except Exception as e:
+        pout("could not write {file}: {error}".format(file=out, error=e), verbose, Level.ERROR)
+        pout("{error}".format(error=e), verbose, Level.DEBUG)
+        return 1
+
+
+def join(img, *, config=DEFAULT_CONFIG, out=None, toc=None, ext=(), dpi=None,
+         page_layout=None, direction=None, verbose=0):
     """Convert set of images to PDF.
     Implementation.
 
@@ -90,6 +196,8 @@ def join(img, *, config=DEFAULT_CONFIG, out=None, toc=None, ext=(), dpi=None, ve
         toc (string) -- TOC file used to populate the PDF outline
         ext (sequence) -- file extensions to pick up inside directories
         dpi (int) -- pixel density of the input images
+        page_layout (string) -- /PageLayout name for the document catalog ('none' to omit)
+        direction (string) -- ViewerPreferences /Direction name, 'L2R' or 'R2L' ('none' to omit)
         verbose (int) -- verbosity level
     Returns:
         int -- process exit code (0 on success, non-zero on hard failure)
@@ -102,6 +210,8 @@ def join(img, *, config=DEFAULT_CONFIG, out=None, toc=None, ext=(), dpi=None, ve
         'toc': toc,
         'ext': list(ext),
         'dpi': dpi,
+        'page_layout': page_layout,
+        'direction': direction,
         'verbose': verbose,
     }
     pout("Command line arguments:", verbose, Level.DEBUG)
@@ -132,13 +242,29 @@ def join(img, *, config=DEFAULT_CONFIG, out=None, toc=None, ext=(), dpi=None, ve
         conf['out'] = out
     if dpi:
         conf['dpi'] = dpi
+    if page_layout:
+        conf['page_layout'] = page_layout
+    if direction:
+        conf['direction'] = direction
 
     # provide safe defaults for anything the config file omitted
     conf.setdefault('toc', None)
     conf.setdefault('out', DEFAULT_OUT)
     conf.setdefault('dpi', DEFAULT_DPI)
+    conf.setdefault('page_layout', DEFAULT_PAGE_LAYOUT)
+    conf.setdefault('direction', DEFAULT_DIRECTION)
     pout("Operating parameter:")
     pout(pformat(conf,depth=3,indent=4), verbose, Level.INFO)
+
+    # resolve the document catalog viewer defaults, 'none' turns the entry off
+    page_layout, error = pdfName(conf['page_layout'], PAGE_LAYOUT_NAMES, 'page_layout')
+    if error:
+        pout(error, verbose, Level.ERROR)
+        return 1
+    direction, error = pdfName(conf['direction'], DIRECTION_NAMES, 'direction')
+    if error:
+        pout(error, verbose, Level.ERROR)
+        return 1
 
     # 2. Main application logic
 
@@ -213,9 +339,4 @@ def join(img, *, config=DEFAULT_CONFIG, out=None, toc=None, ext=(), dpi=None, ve
                 pout(e, verbose, Level.WARNING)
 
     # Write out result
-    try:
-        pdf.output(conf['out'])
-        return 0
-    except Exception as e:
-        pout(e,verbose, Level.ERROR)
-        return 1
+    return writePdf(pdf, conf['out'], page_layout=page_layout, direction=direction, verbose=verbose)
