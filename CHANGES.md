@@ -14,11 +14,11 @@ CLI test harness added.
 
 *join — new document-catalog options*
 
-- **[Added]** `-P, --page-layout <layout>` writes `/PageLayout` into the PDF catalog:
+- **[Added]** **[Changed]** `-P, --page-layout <layout>` writes `/PageLayout` into the PDF catalog:
   `SinglePage`, `OneColumn`, `TwoColumnLeft`, `TwoColumnRight`, `TwoPageLeft`,
   `TwoPageRight`, `none`; default `TwoPageRight`. The `TwoPage*` values raise the
   generated file to PDF 1.5 as the PDF spec requires.
-- **[Added]** `-D, --direction <dir>` writes `/Direction` into `ViewerPreferences`:
+- **[Added]** **[Changed]** `-D, --direction <dir>` writes `/Direction` into `ViewerPreferences`:
   `L2R`, `R2L`, `none`; default `R2L` (right-to-left book).
 - **[Added]** `-m, --page-mode <mode>` writes `/PageMode`: `UseOutlines`, `UseNone`,
   `UseOC`, `UseAttachments`, `FullScreen`, `none`; default `UseOutlines` when the run
