@@ -6,6 +6,7 @@ from invoke import task
 ### Setup default variables
 ##############################################
 
+PY_VERSION = "3.11"
 VENV_PY = Path(".venv/bin/python").resolve()
 
 ##############################################
@@ -37,18 +38,6 @@ def run_rm(c, paths):
             c.run(f"rm -rf {f}")
     pass
 
-def cmd_updatepip():
-    """return cli command to update pip inside venv if possible.
-
-    Returns:
-        String: cli command for updating pip inside venv
-    """
-    if os.name == 'nt':
-        pfcmd = "echo Run 'pip install pip --upgrade' after activating venv using venv.bat"
-    else:
-        pfcmd = f"{VENV_PY} -m pip install pip --upgrade && {VENV_PY} -m pip install --upgrade build twine"
-    return pfcmd
-
 
 ##############################################
 ### Invoke Task Definitions
@@ -62,9 +51,9 @@ def clean(c):
 
 @task()
 def venv(c):
-    """initialize venv"""
-    c.run(f"{VENV_PY} -m venv .venv")
-    c.run(cmd_updatepip())
+    """initialize a uv-managed dev venv"""
+    c.run(f"uv venv --python {PY_VERSION} .venv")
+    c.run("uv pip install build twine")
 
 @task(pre=[clean])
 def package(c):
@@ -85,11 +74,11 @@ def pubtest(c):
 @task(pre=[venv], default=True)
 def build(c):
     """Build and install as editable"""
-    c.run(f"{VENV_PY} -m pip install --editable .")
+    c.run("uv pip install --editable .")
     pass
 
 @task(pre=[build])
 def test(c):
     """Run the CLI test harness (fixtures/outputs under testharness/)"""
-    c.run(f"{VENV_PY} test_harness.py")
+    c.run("uv run test_harness.py")
     pass

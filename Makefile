@@ -1,12 +1,12 @@
 .DEFAULT_GOAL := build
 .PHONY: build freeze publish package publish pubtest clean venv install test
 PROJ_NAME = imgtk
-PY_VERSION = 3.9
+PY_VERSION = 3.11
 SHELL = bash
 
 
 build: venv
-	pip install --editable .
+	uv pip install --editable .
 
 freeze:
 	pip freeze > requirements.txt
@@ -24,16 +24,12 @@ clean :
 	rm -rf dist \
 	rm -rf *.egg-info
 
-venv: .venv
-	source .venv/bin/activate
-
-.venv:
-	python3 -m venv .venv
-	source .venv/bin/activate && pip install pip --upgrade
+venv:
+	@uv venv --python $(PY_VERSION) .venv
 
 install:
-	pip install -r requirements.txt
+	@uv pip install -r requirements.txt
 
 test:
-	.venv/bin/python test_harness.py
+	@uv run test_harness.py
 

@@ -10,13 +10,20 @@ Layout:
     testharness/runs/       per-scenario working dirs and tool outputs
 
 Run:
-    source .venv/bin/activate
-    python test_harness.py [--only join|sort|dedup|opts] [--keep]
+    uv run test_harness.py [--only join|sort|dedup|opts] [--keep] [--verbose]
+
+The harness reads every 'Programming Language :: Python :: 3.NN' classifier from
+pyproject.toml and re-runs the full suite under each of those Python versions
+through a dedicated uv venv (.venv-3NN), reporting pass/fail per version. The
+--self flag runs a single version in-process and is used internally by the
+multi-version driver; it is not meant to be typed by hand.
 """
 from __future__ import annotations
 
 import argparse
 import importlib.util
+import io
+import json
 import os
 import re
 import shutil
@@ -54,8 +61,8 @@ def require_deps():
     if missing:
         sys.stderr.write(
             "missing runtime dependencies: {0}\n"
-            "activate the project venv first:\n"
-            "    source .venv/bin/activate && pip install -e .\n".format(", ".join(missing))
+            "run the harness through uv so the dev env is provisioned:\n"
+            "    uv run test_harness.py\n".format(", ".join(missing))
         )
         sys.exit(2)
 
@@ -64,16 +71,16 @@ require_deps()
 
 
 def cli_prefix():
-    entry = shutil.which("imgtk")
-    if entry:
-        return [entry]
+    # Always run through the interpreter that launched this harness. uv pins a
+    # per-version interpreter when it invokes the child, so the tool under test
+    # uses exactly the Python version being exercised (never a stale console
+    # script that some other venv may have left on PATH).
     return [sys.executable, "-m", "imgtk.cli"]
 
 
 def run_cli(args, cwd, expect_rc: int | None = 0):
     env = os.environ.copy()
-    if shutil.which("imgtk") is None:
-        env["PYTHONPATH"] = str(ROOT)
+    env["PYTHONPATH"] = str(ROOT)
     proc = subprocess.run(
         cli_prefix() + [str(a) for a in args],
         cwd=str(cwd),
@@ -1064,36 +1071,165 @@ def report():
     return lines
 
 
-def main():
-    ap = argparse.ArgumentParser(description="imgtk CLI test harness")
-    ap.add_argument("--only", action="append", choices=sorted(TEST_GROUPS),
-                    help="run only the named test group (repeatable)")
-    ap.add_argument("--keep", action="store_true", help="keep existing fixtures instead of regenerating them")
-    ap.add_argument("--verbose", action="store_true", help="per-test unittest output")
-    args = ap.parse_args()
-
-    if TESTDIR.exists() and not args.keep:
+def _fixture_setup(keep):
+    if TESTDIR.exists() and not keep:
         shutil.rmtree(str(TESTDIR))
     TESTDIR.mkdir(parents=True, exist_ok=True)
     build_fixtures()
 
-    chosen = args.only or sorted(TEST_GROUPS)
+
+def _build_suites(only):
     loader = unittest.TestLoader()
     suites = []
-    for group in chosen:
+    for group in (only or sorted(TEST_GROUPS)):
         for cls in TEST_GROUPS[group]:
             suites.append(loader.loadTestsFromTestCase(cls))
+    return suites
 
-    runner = unittest.TextTestRunner(verbosity=2 if args.verbose else 1)
-    result = runner.run(unittest.TestSuite(suites))
 
+def _clip(text, limit=320):
+    text = (text or "").strip()
+    if not text:
+        return ""
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    tail = lines[-1] if lines else text
+    return tail if len(tail) <= limit else tail[:limit] + "..."
+
+
+# --------------------------------------------------------------------- child mode
+def run_suite_local(args):
+    """Single-version in-process run. The interpreter uv selected for this
+    child IS the Python under test, so the CLI subprocesses (sys.executable)
+    and the assertions all execute against that minor version. Emits one
+    RESULT_JSON line so the multi-version driver can reason about the outcome."""
+    _fixture_setup(args.keep)
+    quiet = io.StringIO()
+    result = unittest.TextTestRunner(stream=quiet, verbosity=0).run(
+        unittest.TestSuite(_build_suites(args.only))
+    )
+    bad = []
+    for case, tb in result.failures + result.errors:
+        bad.append({"test": _test_label(case), "reason": _clip(tb, 320)})
+
+    payload = {
+        "python": "{0}.{1}".format(*sys.version_info[:2]),
+        "requested": args.self,
+        "ran": result.testsRun,
+        "ok": result.wasSuccessful(),
+        "problems": bad,
+        "findings": FINDINGS,
+    }
+    if args.verbose:
+        sys.stderr.write(quiet.getvalue() + "\n")
     for line in report():
         print(line)
     if FINDINGS:
         print("\nREADME/spec discrepancies worth a docs or code fix:")
         for msg in FINDINGS:
             print("  - " + msg)
-    sys.exit(0 if result.wasSuccessful() else 1)
+    print("RESULT_JSON " + json.dumps(payload, sort_keys=True))
+    return 0 if result.wasSuccessful() else 1
+
+
+def _test_label(case):
+    cls = type(case).__name__
+    meth = getattr(case, "__testMethodName__", "")
+    return (cls + "." + meth) if meth else cls
+
+
+# --------------------------------------------------- multi-version uv driver
+def discover_versions():
+    """Python minor versions from pyproject classifiers of the form 3.NN."""
+    text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    found = re.findall(r"Programming Language :: Python :: (3\.\d+)", text)
+    seen = []
+    for v in found:
+        if v not in seen:
+            seen.append(v)
+    return seen
+
+
+def uv(cmd, virtual_env=None):
+    env = os.environ.copy()
+    if virtual_env:
+        env["VIRTUAL_ENV"] = str(virtual_env)
+    proc = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, env=env)
+    return proc.returncode, proc.stdout, proc.stderr
+
+
+def parse_result_json(out):
+    for line in reversed((out or "").splitlines()):
+        if line.startswith("RESULT_JSON "):
+            try:
+                return json.loads(line[len("RESULT_JSON "):])
+            except ValueError:
+                return None
+    return None
+
+
+def drive_versions(args):
+    """Parent mode: provision a dedicated uv venv (.venv-3NN) per classifier
+    version, run the suite in a uv-spawned child, and print one verdict per
+    version. A version's failure is reported with its reason and never stops
+    the remaining versions from being tested."""
+    versions = discover_versions()
+    if not versions:
+        sys.stderr.write("no 'Programming Language :: Python :: 3.NN' classifiers in pyproject.toml\n")
+        return 2
+
+    child_extra = []
+    if args.only:
+        for g in args.only:
+            child_extra += ["--only", g]
+
+    rows = []
+    for ver in versions:
+        venv = ROOT / (".venv-" + ver.replace(".", ""))
+        rc, out, err = uv(["uv", "venv", str(venv), "--python", ver, "--clear", "--force"])
+        if rc != 0:
+            rows.append((ver, "SETUP-FAIL", "interpreter unavailable: " + _clip(err)))
+            continue
+        rc, out, err = uv(
+            ["uv", "run", "--active", "--python", ver, "test_harness.py",
+             "--self", ver] + child_extra,
+            virtual_env=venv,
+        )
+        payload = parse_result_json(out)
+        if payload is None:
+            rows.append((ver, "SETUP-FAIL",
+                         _clip(err) or "env could not be provisioned for " + ver))
+            continue
+        if payload["ok"]:
+            rows.append((ver, "PASS", "{0} tests".format(payload["ran"])))
+        else:
+            detail = "; ".join(
+                "{0} -> {1}".format(p["test"], p["reason"]) for p in payload["problems"]
+            )
+            rows.append((ver, "TEST-FAIL", detail or _clip(err)))
+
+    print("\nper-version results (pyproject Python classifiers: {0})".format(", ".join(versions)))
+    fails = 0
+    for ver, verdict, detail in rows:
+        if verdict != "PASS":
+            fails += 1
+        print("  {0}  {1:11s}  {2}".format(ver, verdict, detail))
+    print("\n{0} of {1} Python versions failed".format(fails, len(rows)))
+    return 1 if fails else 0
+
+
+def main():
+    ap = argparse.ArgumentParser(description="imgtk CLI test harness")
+    ap.add_argument("--only", action="append", choices=sorted(TEST_GROUPS),
+                    help="run only the named test group (repeatable)")
+    ap.add_argument("--keep", action="store_true", help="keep existing fixtures instead of regenerating them")
+    ap.add_argument("--verbose", action="store_true", help="per-test unittest output (child mode)")
+    ap.add_argument("--self", metavar="PYVER",
+                    help="internal: run one version in-process and emit RESULT_JSON")
+    args = ap.parse_args()
+
+    if args.self:
+        sys.exit(run_suite_local(args))
+    sys.exit(drive_versions(args))
 
 
 if __name__ == "__main__":

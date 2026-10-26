@@ -136,3 +136,9 @@ imgtk/_version.py
 # imgtk CLI test harness scratch data (generated fixtures + tool outputs)
 testharness/
 harness_out.txt
+
+# uv-managed per-version test venvs (.venv-311, .venv-312, ...)
+.venv-*
+
+# uv-resolved lockfile (generated when uv provisions a test env; not a committed artifact here)
+uv.lock
