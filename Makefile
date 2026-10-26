@@ -31,5 +31,5 @@ install:
 	@uv pip install -r requirements.txt
 
 test:
-	@uv run test_harness.py
+	@uv run runtests.py
 

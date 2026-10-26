@@ -80,5 +80,5 @@ def build(c):
 @task(pre=[build])
 def test(c):
     """Run the CLI test harness (fixtures/outputs under testharness/)"""
-    c.run("uv run test_harness.py")
+    c.run("uv run runtests.py")
     pass
