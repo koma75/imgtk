@@ -53,9 +53,9 @@ def save_with_exif(path, taken, mtime, seed, w, h, label=""):
 
 
 JOIN_IMAGES = [
-    ("01_first.jpg", 60, 100, 7, "P1 jpg 60x100"),
-    ("02_mid.png", 120, 180, 3, "P2 png 120x180"),
-    ("03_skip.gif", 40, 50, 9, "P3 gif 40x50"),
+    ("1_first.jpg", 60, 100, 7, "P1 jpg 60x100"),
+    ("2_mid.png", 120, 180, 3, "P2 png 120x180"),
+    ("3_skip.gif", 40, 50, 9, "P3 gif 40x50"),
     ("10_last.jpg", 90, 130, 5, "P10 jpg 90x130"),
 ]
 JOIN_SIZES = {name: (w, h) for name, w, h, _s, _l in JOIN_IMAGES}

@@ -5,9 +5,9 @@ from __future__ import annotations
 from .infra import run_cli, scenario, FIXTURES
 from .fixtures import JOIN_SIZES, TOC_FIXTURE
 from .pdfinspect import expect_pdf, expect_pdf_toc, pdf_pages, pdf_page_layout, pdf_direction, pdf_page_mode, pdf_open_action
-JOIN_ORDER_DEFAULT = ['01_first.jpg', '02_mid.png', '10_last.jpg']
-JOIN_ORDER_GIF = ['01_first.jpg', '02_mid.png', '03_skip.gif', '10_last.jpg']
-JOIN_ORDER_CUSTOM = ['01_first.jpg', '03_skip.gif', '10_last.jpg']
+JOIN_ORDER_DEFAULT = ['1_first.jpg', '2_mid.png', '10_last.jpg']
+JOIN_ORDER_GIF = ['1_first.jpg', '2_mid.png', '3_skip.gif', '10_last.jpg']
+JOIN_ORDER_CUSTOM = ['1_first.jpg', '3_skip.gif', '10_last.jpg']
 
 def test_join_generates_default_config():
     root = scenario('join_default', src=FIXTURES / 'join')
@@ -34,12 +34,12 @@ def test_join_directory_entries_sort_numerically():
     root = scenario('join_order', src=FIXTURES / 'join')
     rc, out, err = run_cli(['join', 'join/srcdir', '-o', 'ordered.pdf'], cwd=root)
     data = expect_pdf(root, 'ordered.pdf', JOIN_ORDER_DEFAULT, 96, 'numeric ordering')
-    assert pdf_pages(data)[1][2] != [JOIN_SIZES['10_last.jpg']], '02_mid.png must sort before 10_last.jpg numerically'
+    assert pdf_pages(data)[1][2] == [JOIN_SIZES['2_mid.png']], 'page 2 must be the numerically-second file 2_mid.png, not 10_last.jpg'
 
 def test_join_explicit_files_keep_given_order():
     root = scenario('join_explicit', src=FIXTURES / 'join')
-    rc, out, err = run_cli(['join', 'join/srcdir/10_last.jpg', 'join/srcdir/01_first.jpg', '-o', 'explicit.pdf'], cwd=root)
-    expect_pdf(root, 'explicit.pdf', ['10_last.jpg', '01_first.jpg'], 96, 'explicit file order')
+    rc, out, err = run_cli(['join', 'join/srcdir/10_last.jpg', 'join/srcdir/1_first.jpg', '-o', 'explicit.pdf'], cwd=root)
+    expect_pdf(root, 'explicit.pdf', ['10_last.jpg', '1_first.jpg'], 96, 'explicit file order')
 
 def test_join_pdf_outline_from_toc():
     root = scenario('join_toc', src=FIXTURES / 'join')
