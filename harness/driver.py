@@ -1,25 +1,31 @@
 """Multi-version test driver: provisions a uv venv per ``pyproject`` Python
-classifier, runs the suite in a child interpreter, and reports per-version verdicts.
+classifier, runs the pytest suite in a child interpreter, and reports per-version
+verdicts. ``run_suite_local`` (the ``--self`` child mode) runs pytest in-process so
+the CLI subprocesses and assertions all execute against the child's minor version.
 """
 from __future__ import annotations
 
 import argparse
-import io
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
-import unittest
+from pathlib import Path
+from xml.etree import ElementTree
 
-from tests.infra import ROOT, TESTDIR, FIXTURES, RUNS, FINDINGS, _clip, _test_label
-from tests.fixtures import build_fixtures, JOIN_SIZES, TOC_FIXTURE, SORT_TOPLEVEL
+from tests.infra import ROOT, TESTDIR, FIXTURES, RUNS, FINDINGS, _clip
+from tests.fixtures import JOIN_SIZES, TOC_FIXTURE, SORT_TOPLEVEL
 from tests.dates import target_dir_for
-from tests.test_join import JoinTests, JOIN_ORDER_DEFAULT
-from tests.test_sort import SortTests
-from tests.test_dedup import DedupTests
-from tests.test_opts import OptionTests
+from tests.test_join import JOIN_ORDER_DEFAULT
+
+# group name -> collection target (one pytest module per subcommand)
+GROUP_FILES = {
+    "join": "tests/test_join.py",
+    "sort": "tests/test_sort.py",
+    "dedup": "tests/test_dedup.py",
+    "opts": "tests/test_opts.py",
+}
 
 
 def report():
@@ -36,20 +42,29 @@ def report():
     return lines
 
 
-def _fixture_setup(keep):
-    if TESTDIR.exists() and not keep:
-        shutil.rmtree(str(TESTDIR))
-    TESTDIR.mkdir(parents=True, exist_ok=True)
-    build_fixtures()
+def _collection_args(only):
+    return [GROUP_FILES[g] for g in only] if only else ["tests"]
 
 
-def _build_suites(only):
-    loader = unittest.TestLoader()
-    suites = []
-    for group in (only or sorted(TEST_GROUPS)):
-        for cls in TEST_GROUPS[group]:
-            suites.append(loader.loadTestsFromTestCase(cls))
-    return suites
+def _parse_junit(xml_path):
+    """Map pytest's core JUnit XML onto {ran, ok, problems}."""
+    tree = ElementTree.parse(str(xml_path))
+    suite = tree.getroot().find("testsuite")
+    if suite is None:
+        return None
+    ran = int(suite.get("tests", 0))
+    failures = int(suite.get("failures", 0))
+    errors = int(suite.get("errors", 0))
+    problems = []
+    for tc in suite.findall("testcase"):
+        for kind in ("failure", "error"):
+            node = tc.find(kind)
+            if node is not None:
+                cls = tc.get("classname", "")
+                name = tc.get("name", "")
+                label = (cls + "." + name) if cls else name
+                problems.append({"test": label, "reason": _clip(node.get("message") or "", 320)})
+    return ran, failures == 0 and errors == 0, problems
 
 
 def run_suite_local(args):
@@ -57,25 +72,36 @@ def run_suite_local(args):
     child IS the Python under test, so the CLI subprocesses (sys.executable)
     and the assertions all execute against that minor version. Emits one
     RESULT_JSON line so the multi-version driver can reason about the outcome."""
-    _fixture_setup(args.keep)
-    quiet = io.StringIO()
-    result = unittest.TextTestRunner(stream=quiet, verbosity=0).run(
-        unittest.TestSuite(_build_suites(args.only))
-    )
-    bad = []
-    for case, tb in result.failures + result.errors:
-        bad.append({"test": _test_label(case), "reason": _clip(tb, 320)})
+    import pytest
 
+    xml = TESTDIR / "pytest-junit.xml"
+    xml.unlink(missing_ok=True)
+    pargs = ["-q"]
+    if args.verbose:
+        pargs.append("-v")
+    if args.keep:
+        pargs.append("--keep")
+    pargs += ["--junitxml", str(xml)] + _collection_args(args.only)
+    pytest.main(pargs)
+
+    parsed = _parse_junit(xml)
+    if parsed is None:
+        payload = {"python": "{0}.{1}".format(*sys.version_info[:2]),
+                   "requested": args.self, "ran": 0, "ok": False,
+                   "problems": [{"test": "collection", "reason": "no JUnit produced"}],
+                   "findings": FINDINGS}
+        print("RESULT_JSON " + json.dumps(payload, sort_keys=True))
+        return 1
+
+    ran, ok, problems = parsed
     payload = {
         "python": "{0}.{1}".format(*sys.version_info[:2]),
         "requested": args.self,
-        "ran": result.testsRun,
-        "ok": result.wasSuccessful(),
-        "problems": bad,
+        "ran": ran,
+        "ok": ok,
+        "problems": problems,
         "findings": FINDINGS,
     }
-    if args.verbose:
-        sys.stderr.write(quiet.getvalue() + "\n")
     for line in report():
         print(line)
     if FINDINGS:
@@ -83,18 +109,10 @@ def run_suite_local(args):
         for msg in FINDINGS:
             print("  - " + msg)
     print("RESULT_JSON " + json.dumps(payload, sort_keys=True))
-    return 0 if result.wasSuccessful() else 1
+    return 0 if ok else 1
 
 
-TEST_GROUPS = {
-    "join": [JoinTests],
-    "opts": [OptionTests],
-    "sort": [SortTests],
-    "dedup": [DedupTests],
-}
-
-
-# --------------------------------------------------------------------- child mode
+# --------------------------------------------------- multi-version uv driver
 def discover_versions():
     """Python minor versions from pyproject classifiers of the form 3.NN."""
     text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
@@ -147,7 +165,7 @@ def drive_versions(args):
             rows.append((ver, "SETUP-FAIL", "interpreter unavailable: " + _clip(err)))
             continue
         rc, out, err = uv(
-            ["uv", "run", "--active", "--python", ver, "runtests.py",
+            ["uv", "run", "--active", "--python", ver, "--with", "pytest", "runtests.py",
              "--self", ver] + child_extra,
             virtual_env=venv,
         )
@@ -176,10 +194,10 @@ def drive_versions(args):
 
 def main():
     ap = argparse.ArgumentParser(description="imgtk CLI test harness")
-    ap.add_argument("--only", action="append", choices=sorted(TEST_GROUPS),
+    ap.add_argument("--only", action="append", choices=sorted(GROUP_FILES),
                     help="run only the named test group (repeatable)")
     ap.add_argument("--keep", action="store_true", help="keep existing fixtures instead of regenerating them")
-    ap.add_argument("--verbose", action="store_true", help="per-test unittest output (child mode)")
+    ap.add_argument("--verbose", action="store_true", help="per-test pytest output (child mode)")
     ap.add_argument("--self", metavar="PYVER",
                     help="internal: run one version in-process and emit RESULT_JSON")
     args = ap.parse_args()

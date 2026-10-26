@@ -54,13 +54,15 @@ dev = [
     "pyinstaller",
     "build",
     "twine",
+    "pytest",
 ]
 
 [project.scripts]
 imgtk = "imgtk.cli:main"
 
 [tool.setuptools.packages.find]
-exclude = ["build", "test"]
+include = ["imgtk*"]
+exclude = ["build", "test", "tests", "harness"]
 
 [tool.setuptools.dynamic]
 version = {attr = "imgtk.__version__"}
