@@ -4,6 +4,35 @@ Change-point identifiers: **[Added]** new feature/option · **[Changed]** behavi
 changed · **[Breaking]** incompatible change · **[Minor]** cosmetic/clarification
 · **[Performance]** performance improvement · **[Fixed]** bug fix.
 
+## 1.3.1 (2026.10.31)
+
+**Summary:** Dependency security bump (pillow); test-harness overhaul
+(pytest-based, multi-version uv venvs); version history relocated to
+CHANGES.md; SPDX license headers adopted.
+
+**User-facing specification changes**
+
+- (No specification changes.)
+
+**Bug fixes**
+
+- (No bug fixes.)
+
+**Other changes**
+
+- Runtime dependency `pillow` >=12.2,<13 → >=13.0,<14 (security update).
+- Docs: version history moved out of the README table into CHANGES.md
+  (README now references it); **[Changed]** label adopted for Added items
+  that alter minor behavior.
+- License: SPDX-License-Identifier headers (PEP 639) replace the full BSD
+  text in module headers; copyright 2023 → 2026.
+- Tooling: `test_harness.py` (unittest) replaced by `runtests.py` +
+  `harness/` multi-version uv driver (per-version `.venv-3NN` from
+  pyproject classifiers) and `tests/` per-subcommand pytest suites
+  (join/sort/dedup/opts migrated; join fixture names reordered numeric vs
+  lexicographic); Makefile `test` → `uv run runtests.py`; `.venv-*` and
+  `uv.lock` git-ignored.
+
 ## 1.3.0 (2026.10.20)
 
 **Summary:** PDF document-catalog/viewer options for `join` (page layout, reading
